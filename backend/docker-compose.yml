@@ -1,0 +1,27 @@
+version: "3.9"
+
+services:
+  ai-broadcast-backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ai-broadcast-backend
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/app
+    environment:
+      - PYTHONUNBUFFERED=1
+      - OBS_HOST=obs
+      - OBS_PORT=4455
+      - OBS_PASSWORD=default
+
+  obs:
+    image: obsproject/obs-studio:latest
+    container_name: ai-broadcast-obs
+    ports:
+      - "4455:4455"
+    volumes:
+      - ./obs-config:/config
+    environment:
+      - DISPLAY=:99
