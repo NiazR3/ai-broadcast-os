@@ -1,0 +1,48 @@
+{
+  "features": [
+    "return_1",
+    "return_3",
+    "return_5",
+    "return_10",
+    "return_20",
+    "rsi_14",
+    "macd",
+    "macd_signal",
+    "macd_hist",
+    "bb_pct",
+    "bb_width",
+    "sma_cross",
+    "atr_pct",
+    "volume_change",
+    "close_vs_sma20",
+    "close_vs_sma50",
+    "obv_norm",
+    "vwap_dist",
+    "mfi_14",
+    "volatility_ratio",
+    "efficiency_ratio",
+    "kurtosis_20",
+    "max_dist_20"
+  ],
+  "n_features": 23,
+  "label_offset": 5,
+  "test_accuracy": 0.6697,
+  "test_roc_auc": 0.7433,
+  "trained_at": "2026-06-05T22:20:03",
+  "training_tickers": 30,
+  "model_type": "XGBoost_v2",
+  "classes_trained": [
+    "stock",
+    "crypto",
+    "forex"
+  ],
+  "last_trained_at": "2026-06-20T20:59:53",
+  "training_time_s": 70.7,
+  "configuration": {
+    "interval": "15m",
+    "label_offset_default": 24,
+    "period": "60d",
+    "calibrated": true,
+    "n_estimators": 300
+  }
+}
