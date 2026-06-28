@@ -324,9 +324,9 @@ export function MediaPanel() {
                 <div key={asset.id} className="border rounded p-3 bg-white">
                   <div className="flex justify-center mb-2 bg-gray-50 rounded p-2 min-h-[80px] items-center">
                     <div
-                      className="w-full"
+                      className="w-full h-32 overflow-hidden"
                       dangerouslySetInnerHTML={{
-                        __html: asset.svg_content.slice(0, 1000) + (asset.svg_content.length > 1000 ? "..." : ""),
+                        __html: asset.svg_content,
                       }}
                     />
                   </div>

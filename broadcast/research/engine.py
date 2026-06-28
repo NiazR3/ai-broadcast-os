@@ -215,6 +215,9 @@ DEFAULT_TEMPLATE = RESEARCH_TEMPLATES["general"]
 class MockResearchBackend(ResearchBackend):
     """Returns template-based research results keyed to topic keywords."""
 
+    def __init__(self) -> None:
+        self._id_counter: int = 0
+
     def supports_topic(self, topic: str) -> bool:
         lowered = topic.lower()
         return any(kw in lowered for kw in RESEARCH_TEMPLATES)
@@ -223,18 +226,19 @@ class MockResearchBackend(ResearchBackend):
         lowered = topic.query.lower()
         for keyword, template in RESEARCH_TEMPLATES.items():
             if keyword in lowered:
-                return self._build_result(topic.id, template)
-        return self._build_result(topic.id, DEFAULT_TEMPLATE)
+                return self._build_result(topic.id, template, topic.created_at)
+        return self._build_result(topic.id, DEFAULT_TEMPLATE, topic.created_at)
 
-    def _build_result(self, topic_id: str, template: dict) -> ResearchResult:
+    def _build_result(self, topic_id: str, template: dict, created_at: float) -> ResearchResult:
+        self._id_counter += 1
         return ResearchResult(
-            id=f"result_{topic_id}_{int(time() * 1000)}",
+            id=f"result_{topic_id}_{int(time() * 1000)}_{self._id_counter}",
             topic_id=topic_id,
             summary=template["summary"],
             key_points=list(template["key_points"]),
             sources=[SourceCitation(**s) for s in template["sources"]],
             fact_checks=[FactCheck(**f) for f in template["fact_checks"]],
-            created_at=time(),
+            created_at=created_at,
         )
 
 
@@ -246,6 +250,12 @@ class ResearchEngine:
     def __init__(self) -> None:
         self._results: dict[str, ResearchResult] = {}
         self._topics: dict[str, ResearchTopic] = {}
+        self._id_counter: int = 0
+
+    def _next_id(self) -> str:
+        """Generate a unique topic ID using timestamp and counter."""
+        self._id_counter += 1
+        return f"topic_{int(time() * 1000)}_{self._id_counter}"
 
     def submit(self, topic: ResearchTopic, backend: ResearchBackend) -> str:
         """Submit a topic for research and return the result ID.
@@ -313,7 +323,7 @@ class ResearchAgent(BaseAgent):
     def submit_research(self, query: str, segment_id: str = "", segment_title: str = "", context: str = "") -> dict:
         """Submit a research topic and return the result."""
         topic = ResearchTopic(
-            id=f"topic_{int(time() * 1000)}",
+            id=self._engine._next_id(),
             query=query,
             segment_id=segment_id,
             segment_title=segment_title,
