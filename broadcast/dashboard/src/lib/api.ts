@@ -160,3 +160,74 @@ export async function cohostDialogue(segment: Partial<Segment>): Promise<Dialogu
   if (!res.ok) throw new Error("Failed to generate co-host dialogue");
   return res.json();
 }
+
+// ── Persona API types ──────────────────────────────────────────
+export interface PersonaProfile {
+  id: string;
+  name: string;
+  agent_type: "host" | "cohost" | "director" | "producer";
+  personality_traits: string[];
+  catchphrases: string[];
+  voice_style: "energetic" | "calm" | "professional" | "casual" | "witty" | "serious";
+  default_emotion: string;
+  emotional_range: string[];
+  background_story: string;
+}
+
+// ── Persona API functions ──────────────────────────────────────
+export async function listPersonas(): Promise<PersonaProfile[]> {
+  const res = await fetch(`${API_BASE}/agent/personas`);
+  if (!res.ok) throw new Error("Failed to list personas");
+  return res.json();
+}
+
+export async function createPersona(data: Partial<PersonaProfile>): Promise<PersonaProfile> {
+  const res = await fetch(`${API_BASE}/agent/personas`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error("Failed to create persona");
+  return res.json();
+}
+
+export async function getPersona(id: string): Promise<PersonaProfile> {
+  const res = await fetch(`${API_BASE}/agent/personas/${id}`);
+  if (!res.ok) throw new Error("Failed to get persona");
+  return res.json();
+}
+
+export async function updatePersona(id: string, data: Partial<PersonaProfile>): Promise<PersonaProfile> {
+  const res = await fetch(`${API_BASE}/agent/personas/${id}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error("Failed to update persona");
+  return res.json();
+}
+
+export async function deletePersona(id: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/agent/personas/${id}`, { method: "DELETE" });
+  if (!res.ok) throw new Error("Failed to delete persona");
+}
+
+export async function assignHostPersona(personaId: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/agent/host/persona/${personaId}`, { method: "POST" });
+  if (!res.ok) throw new Error("Failed to assign host persona");
+}
+
+export async function removeHostPersona(): Promise<void> {
+  const res = await fetch(`${API_BASE}/agent/host/persona`, { method: "DELETE" });
+  if (!res.ok) throw new Error("Failed to remove host persona");
+}
+
+export async function assignCoHostPersona(personaId: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/agent/cohost/persona/${personaId}`, { method: "POST" });
+  if (!res.ok) throw new Error("Failed to assign co-host persona");
+}
+
+export async function removeCoHostPersona(): Promise<void> {
+  const res = await fetch(`${API_BASE}/agent/cohost/persona`, { method: "DELETE" });
+  if (!res.ok) throw new Error("Failed to remove co-host persona");
+}

@@ -3,6 +3,7 @@ import { SceneSwitcher } from "./components/SceneSwitcher";
 import { ConfigPanel } from "./components/ConfigPanel";
 import { AgentPanel } from "./components/AgentPanel";
 import { Teleprompter } from "./components/Teleprompter";
+import { PersonaPanel } from "./components/PersonaPanel";
 import { useWebSocket } from "./hooks/useWebSocket";
 
 function App() {
@@ -34,6 +35,11 @@ function App() {
         {/* Director + Agent controls */}
         <section className="bg-white rounded-lg shadow-sm p-6">
           <AgentPanel />
+        </section>
+
+        {/* Persona profiles */}
+        <section className="bg-white rounded-lg shadow-sm p-6">
+          <PersonaPanel />
         </section>
 
         {/* Scene switcher */}
