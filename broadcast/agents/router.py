@@ -13,9 +13,10 @@ from broadcast.config import Settings
 from broadcast.events.bus import EventBus
 
 from broadcast.agents.dialogue import HostAgent, CoHostAgent
+from broadcast.agents.persona import PersonaProfile, PersonaRepository, VoiceStyle
 from broadcast.agents.director import DirectorAgent
 from broadcast.agents.models import (
-    EpisodeScript, Segment, SegmentType,
+    AgentType, EpisodeScript, Segment, SegmentType,
     DialogueBlock, DialogueLine,
 )
 from broadcast.agents.producer import ProducerAgent
@@ -30,6 +31,7 @@ _producer = ProducerAgent()
 _director = DirectorAgent()
 _host = HostAgent()
 _cohost = CoHostAgent()
+_persona_repo = PersonaRepository()
 _event_bus = EventBus()
 _settings = Settings()
 
@@ -183,8 +185,8 @@ def director_generate() -> dict:
     segment = _director.current_segment
     if segment is None:
         raise HTTPException(status_code=400, detail="No segment loaded. Load an episode and advance to a segment.")
-    host_block = _host.generate_dialogue(segment)
-    cohost_block = _cohost.generate_dialogue(segment, host_block.lines[0].text if host_block.lines else "")
+    host_block = _host.generate_dialogue(segment, repo=_persona_repo)
+    cohost_block = _cohost.generate_dialogue(segment, host_block.lines[0].text if host_block.lines else "", repo=_persona_repo)
     _publish_agent_event("agent.dialogue.generated",
         segment_id=segment.id,
         host_text=host_block.lines[0].text if host_block.lines else "",
@@ -210,7 +212,7 @@ def host_dialogue(body: dict) -> dict:
         scene_name=body.get("scene_name", ""),
         dialogue_prompt=body.get("dialogue_prompt", ""),
     )
-    block = _host.generate_dialogue(segment)
+    block = _host.generate_dialogue(segment, repo=_persona_repo)
     return block.model_dump()
 
 
@@ -225,5 +227,121 @@ def cohost_dialogue(body: dict) -> dict:
         scene_name=body.get("scene_name", ""),
         dialogue_prompt=body.get("dialogue_prompt", ""),
     )
-    block = _cohost.generate_dialogue(segment)
+    block = _cohost.generate_dialogue(segment, repo=_persona_repo)
     return block.model_dump()
+
+
+# ── Persona CRUD endpoints ─────────────────────────────────────────
+
+@router.get("/personas", tags=["persona"])
+def list_personas() -> list[dict]:
+    """List all persona profiles."""
+    return [p.model_dump() for p in _persona_repo.list()]
+
+
+@router.post("/personas", tags=["persona"])
+def create_persona(body: dict) -> dict:
+    """Create a new persona profile."""
+    agent_type_str = body.get("agent_type", "host")
+    if agent_type_str not in (t.value for t in AgentType):
+        raise HTTPException(status_code=422, detail=f"Invalid agent_type: {agent_type_str}")
+    voice_str = body.get("voice_style", "casual")
+    if voice_str not in (v.value for v in VoiceStyle):
+        raise HTTPException(status_code=422, detail=f"Invalid voice_style: {voice_str}")
+    try:
+        persona = _persona_repo.create(
+            name=body.get("name", "").strip(),
+            agent_type=AgentType(agent_type_str),
+            personality_traits=body.get("personality_traits"),
+            catchphrases=body.get("catchphrases"),
+            voice_style=VoiceStyle(voice_str),
+            default_emotion=body.get("default_emotion", "neutral"),
+            emotional_range=body.get("emotional_range"),
+            background_story=body.get("background_story", ""),
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    return persona.model_dump()
+
+
+@router.get("/personas/{persona_id}", tags=["persona"])
+def get_persona(persona_id: str) -> dict:
+    """Get a persona profile by ID."""
+    persona = _persona_repo.get(persona_id)
+    if persona is None:
+        raise HTTPException(status_code=404, detail="Persona not found")
+    return persona.model_dump()
+
+
+@router.put("/personas/{persona_id}", tags=["persona"])
+def update_persona(persona_id: str, body: dict) -> dict:
+    """Update fields on an existing persona."""
+    try:
+        persona = _persona_repo.update(persona_id, **body)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Persona not found")
+    return persona.model_dump()
+
+
+@router.delete("/personas/{persona_id}", tags=["persona"])
+def delete_persona(persona_id: str) -> dict:
+    """Delete a persona profile.
+
+    Refuses deletion if the persona is currently assigned to an agent.
+    """
+    host_pid = getattr(_host, "_persona_id", None)
+    cohost_pid = getattr(_cohost, "_persona_id", None)
+    if persona_id == host_pid or persona_id == cohost_pid:
+        raise HTTPException(
+            status_code=409,
+            detail="Cannot delete a persona that is currently assigned to an agent",
+        )
+    if not _persona_repo.delete(persona_id):
+        raise HTTPException(status_code=404, detail="Persona not found")
+    return {"deleted": True, "persona_id": persona_id}
+
+
+# ── Persona assignment endpoints ───────────────────────────────────
+
+@router.post("/host/persona/{persona_id}", tags=["persona"])
+def assign_host_persona(persona_id: str) -> dict:
+    """Assign a persona profile to the Host agent."""
+    persona = _persona_repo.get(persona_id)
+    if persona is None:
+        raise HTTPException(status_code=404, detail="Persona not found")
+    _host.assign_persona(persona_id, _persona_repo)
+    return {
+        "assigned": True,
+        "persona_id": persona_id,
+        "agent": "host",
+        "persona_name": persona.name,
+    }
+
+
+@router.delete("/host/persona", tags=["persona"])
+def remove_host_persona() -> dict:
+    """Remove the persona from the Host agent (revert to default)."""
+    _host.remove_persona()
+    return {"removed": True, "agent": "host"}
+
+
+@router.post("/cohost/persona/{persona_id}", tags=["persona"])
+def assign_cohost_persona(persona_id: str) -> dict:
+    """Assign a persona profile to the Co-Host agent."""
+    persona = _persona_repo.get(persona_id)
+    if persona is None:
+        raise HTTPException(status_code=404, detail="Persona not found")
+    _cohost.assign_persona(persona_id, _persona_repo)
+    return {
+        "assigned": True,
+        "persona_id": persona_id,
+        "agent": "cohost",
+        "persona_name": persona.name,
+    }
+
+
+@router.delete("/cohost/persona", tags=["persona"])
+def remove_cohost_persona() -> dict:
+    """Remove the persona from the Co-Host agent (revert to default)."""
+    _cohost.remove_persona()
+    return {"removed": True, "agent": "cohost"}

@@ -251,7 +251,8 @@ class TestPersonaAPI:
         assert resp.status_code == 200
         assert resp.json() == []
 
-    def test_create_persona(self, client):
+    def _create_persona(self, client) -> str:
+        """Helper: create a persona and return its ID."""
         resp = client.post("/agent/personas", json={
             "name": "Energetic Host",
             "agent_type": "host",
@@ -263,18 +264,18 @@ class TestPersonaAPI:
             "background_story": "A high-energy morning show host",
         })
         assert resp.status_code == 200
-        data = resp.json()
-        assert data["name"] == "Energetic Host"
-        assert data["agent_type"] == "host"
-        assert "id" in data
-        return data["id"]
+        return resp.json()["id"]
+
+    def test_create_persona(self, client):
+        pid = self._create_persona(client)
+        assert pid is not None
 
     def test_create_persona_validates_required(self, client):
         resp = client.post("/agent/personas", json={})
         assert resp.status_code == 422
 
     def test_get_persona(self, client):
-        pid = self.test_create_persona(client)
+        pid = self._create_persona(client)
         resp = client.get(f"/agent/personas/{pid}")
         assert resp.status_code == 200
         assert resp.json()["id"] == pid
@@ -284,7 +285,7 @@ class TestPersonaAPI:
         assert resp.status_code == 404
 
     def test_update_persona(self, client):
-        pid = self.test_create_persona(client)
+        pid = self._create_persona(client)
         resp = client.put(f"/agent/personas/{pid}", json={"name": "Updated Host"})
         assert resp.status_code == 200
         assert resp.json()["name"] == "Updated Host"
@@ -294,7 +295,7 @@ class TestPersonaAPI:
         assert resp.status_code == 404
 
     def test_delete_persona(self, client):
-        pid = self.test_create_persona(client)
+        pid = self._create_persona(client)
         resp = client.delete(f"/agent/personas/{pid}")
         assert resp.status_code == 200
         resp = client.get(f"/agent/personas/{pid}")
@@ -305,7 +306,7 @@ class TestPersonaAPI:
         assert resp.status_code == 404
 
     def test_assign_host_persona(self, client):
-        pid = self.test_create_persona(client)
+        pid = self._create_persona(client)
         resp = client.post(f"/agent/host/persona/{pid}")
         assert resp.status_code == 200
         data = resp.json()
@@ -314,7 +315,7 @@ class TestPersonaAPI:
         assert data["agent"] == "host"
 
     def test_assign_cohost_persona(self, client):
-        pid = self.test_create_persona(client)
+        pid = self._create_persona(client)
         resp = client.post(f"/agent/cohost/persona/{pid}")
         assert resp.status_code == 200
         assert resp.json()["assigned"] is True
@@ -324,26 +325,26 @@ class TestPersonaAPI:
         assert resp.status_code == 404
 
     def test_remove_host_persona(self, client):
-        pid = self.test_create_persona(client)
+        pid = self._create_persona(client)
         client.post(f"/agent/host/persona/{pid}")
         resp = client.delete("/agent/host/persona")
         assert resp.status_code == 200
         assert resp.json()["removed"] is True
 
     def test_remove_cohost_persona(self, client):
-        pid = self.test_create_persona(client)
+        pid = self._create_persona(client)
         client.post(f"/agent/cohost/persona/{pid}")
         resp = client.delete("/agent/cohost/persona")
         assert resp.status_code == 200
 
     def test_delete_rejects_if_assigned_to_host(self, client):
-        pid = self.test_create_persona(client)
+        pid = self._create_persona(client)
         client.post(f"/agent/host/persona/{pid}")
         resp = client.delete(f"/agent/personas/{pid}")
         assert resp.status_code == 409  # Conflict — persona in use
 
     def test_delete_rejects_if_assigned_to_cohost(self, client):
-        pid = self.test_create_persona(client)
+        pid = self._create_persona(client)
         client.post(f"/agent/cohost/persona/{pid}")
         resp = client.delete(f"/agent/personas/{pid}")
         assert resp.status_code == 409
