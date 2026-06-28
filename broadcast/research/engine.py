@@ -323,24 +323,19 @@ class ResearchAgent(BaseAgent):
         result_id = self._engine.submit(topic, self._backend)
         result = self._engine.get(result_id)
         # Publish to EventBus
+        payload = {
+            "type": "research.result.ready",
+            "topic_id": topic.id,
+            "result_id": result_id,
+            "query": query,
+            "timestamp": time(),
+        }
         try:
             loop = asyncio.get_running_loop()
         except RuntimeError:
-            asyncio.run(self._event_bus.publish("research", {
-                "type": "research.result.ready",
-                "topic_id": topic.id,
-                "result_id": result_id,
-                "query": query,
-                "timestamp": time(),
-            }))
+            asyncio.run(self._event_bus.publish("research", payload))
         else:
-            loop.create_task(self._event_bus.publish("research", {
-                "type": "research.result.ready",
-                "topic_id": topic.id,
-                "result_id": result_id,
-                "query": query,
-                "timestamp": time(),
-            }))
+            loop.create_task(self._event_bus.publish("research", payload))
         return result.model_dump() if result else {}
 
     def get_result(self, result_id: str) -> Optional[ResearchResult]:
