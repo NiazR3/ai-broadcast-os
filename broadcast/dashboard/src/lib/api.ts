@@ -232,6 +232,13 @@ export async function removeCoHostPersona(): Promise<void> {
   if (!res.ok) throw new Error("Failed to remove co-host persona");
 }
 
+export async function duplicatePersona(id: string): Promise<PersonaProfile> {
+  const original = await getPersona(id);
+  const { id: _unused, ...data } = original;
+  data.name = `${data.name} (Copy)`;
+  return createPersona(data);
+}
+
 // ── Audience API types ────────────────────────────────────────────────
 export interface ChatMessage {
   id: string;
