@@ -41,6 +41,7 @@ class MetricsCollector:
         self._chat_count: int = 0
         self._chat_window_start: float = 0.0
         self._task: Optional[asyncio.Task] = None
+        self._current_session_id: Optional[str] = None
         self._message_counts: dict[str, int] = {}  # user → count
 
     @property
@@ -116,11 +117,11 @@ class MetricsCollector:
 
     def _on_broadcast_stopped(self) -> None:
         """Handle broadcast stop."""
-        session_id = getattr(self, "_current_session_id", None)
+        session_id = self._current_session_id
         if session_id:
             self._session_manager.close_session(session_id)
-            self._current_session_id = None
             self._take_snapshot(final=True)
+            self._current_session_id = None
         logger.info("Broadcast stopped, session=%s closed", session_id)
 
     def _on_platform_event(self, event: dict) -> None:
@@ -138,7 +139,7 @@ class MetricsCollector:
         user = event.get("user", "anonymous")
         self._message_counts[user] = self._message_counts.get(user, 0) + 1
 
-        session_id = getattr(self, "_current_session_id", None)
+        session_id = self._current_session_id
         if session_id:
             self._db.insert_event(AnalyticsEvent(
                 id=self._db._next_id("ev"),
@@ -154,7 +155,7 @@ class MetricsCollector:
 
     def _log_event(self, event_type: str, payload: dict) -> None:
         """Record a generic event to the event log."""
-        session_id = getattr(self, "_current_session_id", None)
+        session_id = self._current_session_id
         if not session_id:
             return
         self._db.insert_event(AnalyticsEvent(
@@ -167,15 +168,13 @@ class MetricsCollector:
 
     def _take_snapshot(self, final: bool = False) -> None:
         """Record a metrics snapshot."""
-        session_id = getattr(self, "_current_session_id", None)
+        session_id = self._current_session_id
         if not session_id:
             return
 
         # Get live metrics from session
         session = self._session_manager.get_session(session_id)
-        viewer_count = session.peak_viewers if session else 0  # simplified
-        if not final and session:
-            viewer_count = session.peak_viewers or 0
+        viewer_count = (session.peak_viewers or 0) if session else 0
 
         # Compute chat rate (messages/min over the window)
         elapsed = time() - self._chat_window_start
@@ -198,5 +197,5 @@ class MetricsCollector:
         """Periodically take snapshots while a session is live."""
         while self._running:
             await asyncio.sleep(self.SNAPSHOT_INTERVAL)
-            if hasattr(self, "_current_session_id") and self._current_session_id:
+            if self._current_session_id:
                 self._take_snapshot()
