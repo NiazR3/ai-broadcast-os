@@ -92,22 +92,8 @@ class ReportGenerator:
         active = self._db.get_active_session()
         recent = self._db.list_sessions(limit=5)
 
-        totals_row = self._db._conn.execute(
-            """SELECT
-                   COUNT(*) as total_sessions,
-                   COALESCE(SUM(total_chat_messages), 0) as total_messages,
-                   COALESCE(SUM(duration_seconds), 0) as total_duration,
-                   COALESCE(MAX(peak_viewers), 0) as all_time_peak
-               FROM broadcast_sessions WHERE status = 'ended'"""
-        ).fetchone()
-
         return {
             "live_session": active.model_dump() if active else None,
             "recent_sessions": [s.model_dump() for s in recent],
-            "totals": {
-                "total_sessions": totals_row["total_sessions"],
-                "total_messages": totals_row["total_messages"],
-                "total_duration_hours": round(totals_row["total_duration"] / 3600, 1),
-                "all_time_peak": totals_row["all_time_peak"],
-            },
+            "totals": self._db.get_dashboard_totals(),
         }

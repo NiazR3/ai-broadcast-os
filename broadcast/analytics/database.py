@@ -276,6 +276,23 @@ class AnalyticsDatabase:
             "assets_created": asset_count,
         }
 
+    def get_dashboard_totals(self) -> dict:
+        """Get aggregate totals across all ended sessions."""
+        row = self._conn.execute(
+            """SELECT
+                   COUNT(*) as total_sessions,
+                   COALESCE(SUM(total_chat_messages), 0) as total_messages,
+                   COALESCE(SUM(duration_seconds), 0) as total_duration,
+                   COALESCE(MAX(peak_viewers), 0) as all_time_peak
+               FROM broadcast_sessions WHERE status = 'ended'"""
+        ).fetchone()
+        return {
+            "total_sessions": row["total_sessions"],
+            "total_messages": row["total_messages"],
+            "total_duration_hours": round(row["total_duration"] / 3600, 1),
+            "all_time_peak": row["all_time_peak"],
+        }
+
     # ── Row deserialization helpers ────────────────────────────────
 
     @staticmethod

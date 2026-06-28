@@ -346,6 +346,9 @@ class TestReportGenerator:
         assert len(report.timeline) >= 1
 
     def test_build_csv(self, db):
+        from broadcast.analytics.session import SessionManager
+        from broadcast.analytics.reporting import ReportGenerator
+        import csv, io
         sm = SessionManager(db)
         s = sm.create_session()
         db.insert_snapshot(MetricsSnapshot(id="m1", session_id=s.id, timestamp=100.0, viewer_count=10))
@@ -354,13 +357,42 @@ class TestReportGenerator:
         rg = ReportGenerator(db)
         csv_str = rg.build_csv(s.id)
         assert csv_str is not None
-        assert "timestamp,viewer_count,chat_rate" in csv_str
-        assert "10" in csv_str
-        assert "20" in csv_str
+        reader = csv.reader(io.StringIO(csv_str))
+        rows = list(reader)
+        assert rows[0] == ["timestamp", "viewer_count", "chat_rate", "platform"]
+        assert rows[1][1] == "10"  # viewer_count cell
+        assert rows[2][1] == "20"  # viewer_count cell
 
     def test_build_csv_no_data(self, db):
         rg = ReportGenerator(db)
         assert rg.build_csv("nonexistent") is None
+
+    def test_build_report_zero_chat_events(self, db):
+        """Report with no chat events should have 0 messages_per_minute."""
+        sm = SessionManager(db)
+        s = sm.create_session()
+        db.insert_snapshot(MetricsSnapshot(id="m1", session_id=s.id, timestamp=100.0, viewer_count=10))
+        sm.close_session(s.id)
+        rg = ReportGenerator(db)
+        report = rg.build_report(s.id)
+        assert report is not None
+        assert report.engagement.total_chat_messages == 0
+        assert report.engagement.messages_per_minute == 0.0
+
+    def test_build_report_zero_duration(self, db):
+        """Session with 0 duration should handle division safely."""
+        import time as ttime
+        sm = SessionManager(db)
+        s = BroadcastSession(id=db._next_id("sess"), started_at=ttime.time(), status="live", created_at=ttime.time())
+        db.insert_session(s)
+        db.insert_snapshot(MetricsSnapshot(id="m1", session_id=s.id, timestamp=ttime.time(), viewer_count=5))
+        # Immediately close
+        sm.close_session(s.id)
+        rg = ReportGenerator(db)
+        report = rg.build_report(s.id)
+        assert report is not None
+        assert report.summary.duration_seconds >= 0
+        assert report.engagement.messages_per_minute == 0.0
 
     def test_build_dashboard_no_data(self, db):
         rg = ReportGenerator(db)
