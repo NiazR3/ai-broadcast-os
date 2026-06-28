@@ -119,3 +119,6 @@ def test_websocket_endpoint(mock_popen):
         client.post("/broadcast/start")
         data = ws.receive_json()
         assert data["type"] == "broadcast.started"
+
+    # Clean up: stop broadcast so next test gets a clean state
+    client.post("/broadcast/stop")
