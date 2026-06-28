@@ -3,6 +3,7 @@
 This repository contains the Broadcast backend and dashboard.
 
 ## M7 Milestone
+**Status: Completed (July 1, 2026)**
 
 The M7 milestone adds:
 - Optional SQLite persistence for persona profiles
