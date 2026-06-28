@@ -16,7 +16,6 @@ from broadcast.api.schemas import (
 from broadcast.config import Settings
 from broadcast.obs.controller import ObsController, ObsConnectionError
 from broadcast.streaming.multiplexer import Multiplexer
-from broadcast.streaming.platforms import Platform, build_rtmp_url
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +28,11 @@ _obs = ObsController(
     password=_settings.obs_password,
 )
 _mux = Multiplexer(_settings)
+
+
+def get_mux() -> Multiplexer:
+    """Return the module-level Multiplexer instance."""
+    return _mux
 
 
 def _build_platform_responses(status) -> dict[str, PlatformConfigResponse]:
@@ -105,19 +109,5 @@ def update_platforms(req: PlatformUpdateRequest):
     """Update stream keys and reconfigure platforms."""
     updates = {"twitch": req.twitch, "youtube": req.youtube, "facebook": req.facebook}
     for name, key in updates.items():
-        if name not in _mux.status.platforms:
-            continue
-        ps = _mux.status.platforms[name]
-        if key:
-            try:
-                plat = Platform(name)
-                ps.rtmp_url = build_rtmp_url(plat, key)
-                ps.error = None
-            except ValueError as exc:
-                ps.error = str(exc)
-                ps.rtmp_url = ""
-        else:
-            ps.rtmp_url = ""
-            ps.error = "Stream key not configured"
-        ps.streaming = False
+        _mux.update_platform(name, key)
     return get_platforms()

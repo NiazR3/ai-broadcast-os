@@ -53,6 +53,28 @@ class Multiplexer:
     def status(self) -> BroadcastStatus:
         return self._status
 
+    def update_platform(self, platform_name: str, stream_key: str) -> None:
+        """Update a platform's stream key and reconfigure its RTMP URL.
+
+        Sets streaming=False after update so the platform must be
+        re-added to an active broadcast via start_broadcast().
+        """
+        if platform_name not in self._status.platforms:
+            return
+        ps = self._status.platforms[platform_name]
+        if stream_key:
+            try:
+                plat = Platform(platform_name)
+                ps.rtmp_url = build_rtmp_url(plat, stream_key)
+                ps.error = None
+            except ValueError as exc:
+                ps.error = str(exc)
+                ps.rtmp_url = ""
+        else:
+            ps.rtmp_url = ""
+            ps.error = "Stream key not configured"
+        ps.streaming = False
+
     def start_broadcast(self) -> None:
         """Start the broadcast — spawns FFmpeg to multiplex to all configured platforms."""
         if self._status.active:

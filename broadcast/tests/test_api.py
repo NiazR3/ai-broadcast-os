@@ -9,9 +9,8 @@ from unittest.mock import MagicMock, patch
 
 from fastapi.testclient import TestClient
 
-from broadcast.api.routes import _mux as routes_mux
+from broadcast.api.routes import get_mux
 from broadcast.main import app
-from broadcast.streaming.platforms import Platform, build_rtmp_url
 
 
 # ---------------------------------------------------------------------------
@@ -20,10 +19,8 @@ from broadcast.streaming.platforms import Platform, build_rtmp_url
 
 def _configure_platform(platform_name: str, stream_key: str) -> None:
     """Give a platform on the module-level multiplexer a valid RTMP URL."""
-    plat = Platform(platform_name)
-    ps = routes_mux.status.platforms[platform_name]
-    ps.rtmp_url = build_rtmp_url(plat, stream_key)
-    ps.error = None
+    mux = get_mux()
+    mux.update_platform(platform_name, stream_key)
 
 
 # ---------------------------------------------------------------------------
