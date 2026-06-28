@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from typing import Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
+
+from broadcast.validation import validate_stream_key
 
 
 class PlatformConfigResponse(BaseModel):
@@ -29,6 +31,11 @@ class PlatformUpdateRequest(BaseModel):
     twitch: str = ""
     youtube: str = ""
     facebook: str = ""
+
+    @field_validator("twitch", "youtube", "facebook")
+    @classmethod
+    def _validate_stream_keys(cls, v: str) -> str:
+        return validate_stream_key(v)
 
 
 class SceneListResponse(BaseModel):

@@ -9,6 +9,7 @@ from broadcast.streaming.platforms import (
     Platform, PlatformStatus, BroadcastStatus, build_rtmp_url,
 )
 from broadcast.config import Settings
+from broadcast.validation import validate_stream_key
 
 logger = logging.getLogger(__name__)
 
@@ -68,12 +69,23 @@ class Multiplexer:
     def update_platform(self, platform_name: str, stream_key: str) -> None:
         """Update a platform's stream key and reconfigure its RTMP URL.
 
-        Sets streaming=False after update so the platform must be
-        re-added to an active broadcast via start_broadcast().
+        Validates the stream key before applying.  Sets streaming=False
+        after update so the platform must be re-added to an active
+        broadcast via start_broadcast().
         """
         if platform_name not in self._status.platforms:
             return
         ps = self._status.platforms[platform_name]
+
+        # Validate the stream key before using it
+        try:
+            validate_stream_key(stream_key)
+        except ValueError as exc:
+            ps.error = str(exc)
+            ps.rtmp_url = ""
+            ps.streaming = False
+            return
+
         if stream_key:
             try:
                 plat = Platform(platform_name)

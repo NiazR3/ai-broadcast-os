@@ -6,7 +6,7 @@ import asyncio
 import logging
 from time import time
 
-from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
 
 from broadcast.api.schemas import (
     BroadcastStatusResponse,
@@ -14,6 +14,7 @@ from broadcast.api.schemas import (
     PlatformUpdateRequest,
     SceneListResponse,
 )
+from broadcast.auth import verify_api_key
 from broadcast.config import Settings
 from broadcast.events.bus import EventBus
 from broadcast.obs.controller import ObsController, ObsConnectionError
@@ -21,7 +22,7 @@ from broadcast.streaming.multiplexer import Multiplexer
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/broadcast", tags=["broadcast"])
+router = APIRouter(prefix="/broadcast", tags=["broadcast"], dependencies=[Depends(verify_api_key)])
 
 _settings = Settings()
 _obs = ObsController(
@@ -94,9 +95,9 @@ async def list_scenes():
         return SceneListResponse(scenes=result)
     except ObsConnectionError:
         raise HTTPException(status_code=503, detail="OBS not connected")
-    except Exception as exc:
+    except Exception:
         logger.exception("Failed to list OBS scenes")
-        raise HTTPException(status_code=500, detail=str(exc))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.post("/scenes/{scene_name}")
@@ -108,14 +109,24 @@ async def switch_scene(scene_name: str):
         return {"scene": scene_name, "status": "switched"}
     except ObsConnectionError:
         raise HTTPException(status_code=503, detail="OBS not connected")
-    except Exception as exc:
+    except Exception:
         logger.exception("Failed to switch OBS scene")
-        raise HTTPException(status_code=500, detail=str(exc))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.websocket("/ws")
 async def broadcast_events(websocket: WebSocket):
     """WebSocket endpoint for real-time broadcast events."""
+    # Validate Origin header against allowed origins.
+    # Empty origin (no header) is allowed for non-browser clients (test tools, wscat, curl).
+    # Browsers always send Origin, so browser-based connections are validated.
+    origin = websocket.headers.get("origin", "")
+    allowed_origins = _settings.websocket_allowed_origins
+    if origin and allowed_origins and origin not in allowed_origins:
+        logger.warning("WebSocket connection rejected: origin '%s' not allowed", origin)
+        await websocket.close(code=1008)  # Policy violation
+        return
+
     await websocket.accept()
     try:
         async for event in _event_bus.subscribe("broadcast"):

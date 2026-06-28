@@ -29,6 +29,13 @@ class Settings(BaseSettings):
     youtube_rtmp_url: str = "rtmp://a.rtmp.youtube.com/live2"
     facebook_rtmp_url: str = "rtmp://live-api-s.facebook.com:80/rtmp"
 
+    # Authentication
+    api_key: str = ""  # BROADCAST_API_KEY env var; empty = no auth (dev mode)
+
+    # WebSocket origin validation -- comma-separated list of allowed origins
+    # e.g. "http://localhost:5173,http://localhost:8100"
+    websocket_allowed_origins: list[str] = ["http://localhost:5173"]
+
     model_config = {"env_prefix": "BROADCAST_", "env_file": ".env"}
 
     @property
