@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { API_BASE } from "../lib/api";
 
 interface PlatformKeys {
   twitch: string;
@@ -13,10 +14,12 @@ export function ConfigPanel() {
     facebook: "",
   });
   const [saved, setSaved] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const handleSave = async () => {
+    setError(null);
     try {
-      const res = await fetch("http://localhost:8100/broadcast/platforms", {
+      const res = await fetch(`${API_BASE}/broadcast/platforms`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(keys),
@@ -24,9 +27,12 @@ export function ConfigPanel() {
       if (res.ok) {
         setSaved(true);
         setTimeout(() => setSaved(false), 2000);
+      } else {
+        const data = await res.json().catch(() => null);
+        setError(data?.detail || `Request failed (${res.status})`);
       }
-    } catch {
-      // ignore
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to save configuration");
     }
   };
 
@@ -49,6 +55,11 @@ export function ConfigPanel() {
           />
         </div>
       ))}
+      {error && (
+        <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2">
+          {error}
+        </div>
+      )}
       <button
         onClick={handleSave}
         className="px-4 py-2 bg-blue-600 text-white rounded text-sm hover:bg-blue-700"

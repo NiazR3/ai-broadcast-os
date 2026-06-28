@@ -51,6 +51,18 @@ class Multiplexer:
 
     @property
     def status(self) -> BroadcastStatus:
+        # Detect stale FFmpeg death: process exited but we still think we're active
+        if self._process is not None and self._status.active:
+            ret = self._process.poll()
+            if isinstance(ret, int):
+                logger.warning(
+                    "FFmpeg process (PID %d) exited unexpectedly with code %d",
+                    self._process.pid, ret,
+                )
+                self._status.active = False
+                self._status.start_time = None
+                for ps in self._status.platforms.values():
+                    ps.streaming = False
         return self._status
 
     def update_platform(self, platform_name: str, stream_key: str) -> None:

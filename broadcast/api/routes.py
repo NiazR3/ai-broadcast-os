@@ -87,10 +87,10 @@ async def stop_broadcast():
 
 
 @router.get("/scenes", response_model=SceneListResponse)
-def list_scenes():
+async def list_scenes():
     """List available OBS scenes."""
     try:
-        result = asyncio.run(_obs.get_scene_list())
+        result = await _obs.get_scene_list()
         return SceneListResponse(scenes=result)
     except ObsConnectionError:
         raise HTTPException(status_code=503, detail="OBS not connected")
@@ -124,7 +124,7 @@ async def broadcast_events(websocket: WebSocket):
         pass
 
 
-@router.get("/platforms")
+@router.get("/platforms", response_model=dict[str, PlatformConfigResponse])
 def get_platforms():
     """Get current platform configuration."""
     return _build_platform_responses(_mux.status)
