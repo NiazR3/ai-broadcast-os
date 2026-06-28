@@ -166,7 +166,7 @@ class ChartRenderer:
         content = (
             title_svg
             + _render_gridlines(chart_h, lm, chart_w - lm, bm)
-            + _render_axis_lines(config.width, chart_h + 20, bm, lm)
+            + _render_axis_lines(config.width, chart_h, bm, lm)
             + bars_svg
             + labels_svg
             + legend_svg
@@ -266,7 +266,7 @@ class ChartRenderer:
         content = (
             title_svg
             + _render_gridlines(chart_h, lm, chart_w - lm, bm)
-            + _render_axis_lines(config.width, chart_h + 20, bm, lm)
+            + _render_axis_lines(config.width, chart_h, bm, lm)
             + lines_svg
             + points_svg
             + labels_svg
