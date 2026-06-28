@@ -2,6 +2,7 @@
 
 import pytest
 from broadcast.api.routes import get_mux
+from broadcast.agents.router import _persona_repo
 
 
 @pytest.fixture(autouse=True)
@@ -14,6 +15,14 @@ def reset_multiplexer():
     mux.stop_broadcast()
     for name in list(mux.status.platforms.keys()):
         mux.update_platform(name, "")
+    yield
+
+
+@pytest.fixture(autouse=True)
+def clear_personas():
+    """Clear the persona repository before each test to ensure test isolation."""
+    for persona in list(_persona_repo.list()):
+        _persona_repo.delete(persona.id)
     yield
 
 

@@ -122,3 +122,54 @@ def test_websocket_endpoint(mock_popen):
 
     # Clean up: stop broadcast so next test gets a clean state
     client.post("/broadcast/stop")
+
+
+def test_duplicate_persona_endpoint():
+    """Test duplicating a persona via the API endpoint."""
+    client = TestClient(app)
+
+    # First create a persona to duplicate
+    create_resp = client.post(
+        "/agent/personas",
+        json={
+            "name": "Original Person",
+            "agent_type": "host",
+            "personality_traits": ["enthusiastic", "knowledgeable"],
+            "catchphrases": ["Let's go!"],
+            "voice_style": "energetic",
+            "default_emotion": "excited",
+            "emotional_range": ["excited", "curious", "enthusiastic"],
+            "background_story": "A test persona",
+        },
+    )
+    assert create_resp.status_code == 200
+    original_persona = create_resp.json()
+    original_id = original_persona["id"]
+
+    # Duplicate the persona
+    duplicate_resp = client.post(f"/agent/personas/{original_id}/duplicate")
+    assert duplicate_resp.status_code == 200
+    duplicated_persona = duplicate_resp.json()
+
+    # Verify the duplicated persona
+    assert duplicated_persona["id"] != original_id
+    assert duplicated_persona["name"] == "Original Person (Copy)"
+    assert duplicated_persona["agent_type"] == original_persona["agent_type"]
+    assert duplicated_persona["personality_traits"] == original_persona["personality_traits"]
+    assert duplicated_persona["catchphrases"] == original_persona["catchphrases"]
+    assert duplicated_persona["voice_style"] == original_persona["voice_style"]
+    assert duplicated_persona["default_emotion"] == original_persona["default_emotion"]
+    assert duplicated_persona["emotional_range"] == original_persona["emotional_range"]
+    assert duplicated_persona["background_story"] == original_persona["background_story"]
+
+    # Verify both personas exist
+    list_resp = client.get("/agent/personas")
+    assert list_resp.status_code == 200
+    personas = list_resp.json()
+    assert len(personas) == 2
+
+    # Verify we can get both by ID
+    get_original = client.get(f"/agent/personas/{original_id}")
+    assert get_original.status_code == 200
+    get_duplicate = client.get(f"/agent/personas/{duplicated_persona['id']}")
+    assert get_duplicate.status_code == 200

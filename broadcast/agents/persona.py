@@ -7,7 +7,7 @@ from typing import Optional
 
 from pydantic import BaseModel, Field
 
-from broadcast.agents.models import AgentType
+from .models import AgentType
 from .persona_repository import PersonaRepository
 
 

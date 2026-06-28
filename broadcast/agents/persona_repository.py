@@ -237,6 +237,57 @@ class PersonaRepository:
                 return True
             return False
 
+    def duplicate_persona(self, persona_id: str) -> object:
+        """Duplicate an existing persona with a new ID and '(Copy)' suffix in name.
+
+        Args:
+            persona_id: The ID of the persona to duplicate
+
+        Returns:
+            The newly created duplicate persona
+
+        Raises:
+            ValueError: If the source persona is not found
+        """
+        # Get the original persona
+        persona = self.get(persona_id)
+        if persona is None:
+            raise ValueError(f"Persona '{persona_id}' not found")
+
+        # Import the PersonaProfile class to create a new instance
+        PersonaProfile, AgentType, VoiceStyle = self._get_persona_class()
+
+        # Create a duplicate with new ID and modified name
+        duplicate = PersonaProfile(
+            id=self._generate_id(),  # Generate a new ID
+            name=f"{persona.name} (Copy)",
+            agent_type=persona.agent_type,
+            personality_traits=list(persona.personality_traits),  # Copy the list
+            catchphrases=list(persona.catchphrases),  # Copy the list
+            voice_style=persona.voice_style,
+            default_emotion=persona.default_emotion,
+            emotional_range=list(persona.emotional_range),  # Copy the list
+            background_story=persona.background_story,
+        )
+
+        # Save the duplicate using the create method
+        return self.create(
+            name=duplicate.name,
+            agent_type=duplicate.agent_type,
+            personality_traits=duplicate.personality_traits,
+            catchphrases=duplicate.catchphrases,
+            voice_style=duplicate.voice_style,
+            default_emotion=duplicate.default_emotion,
+            emotional_range=duplicate.emotional_range,
+            background_story=duplicate.background_story,
+            id=duplicate.id,
+        )
+
+    def _generate_id(self) -> str:
+        """Generate a unique ID for a persona."""
+        import uuid
+        return uuid.uuid4().hex[:12]
+
     def from_model(self, persona: object) -> object:
         """Store a pre-built PersonaProfile (used for seeding defaults).
 

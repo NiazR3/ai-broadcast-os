@@ -4,6 +4,7 @@ from broadcast.agents.persona import (
     PersonaProfile, PersonaRepository, VoiceStyle,
 )
 from broadcast.agents.models import AgentType, Segment, SegmentType
+from broadcast.agents import router
 
 
 # ── Model tests ────────────────────────────────────────────────────
@@ -372,3 +373,82 @@ class TestPersonaAPI:
         # Host dialogue should have emotion set
         assert data["host"]["lines"][0]["emotion"] is not None
         assert data["host"]["lines"][0]["emotion"] in ["excited", "amazed"]
+
+
+def get_health_status(persona: PersonaProfile) -> dict:
+    """JavaScript getHealthStatus logic ported to Python for testing."""
+    # Check if persona is assigned to host or co-host (not applicable here, just simulate)
+    # For UI test we ignore assignment; just compute completeness.
+    has_name = bool(persona.name and persona.name.strip())
+    has_traits = len(persona.personality_traits) > 0
+    has_catchphrases = len(persona.catchphrases) > 0
+    has_emotions = len(persona.emotional_range) > 0
+    has_background = bool(persona.background_story and persona.background_story.strip())
+
+    completeness = (
+        (1 if has_name else 0) +
+        (1 if has_traits else 0) +
+        (1 if has_catchphrases else 0) +
+        (1 if has_emotions else 0) +
+        (1 if has_background else 0)
+    ) / 5
+
+    if completeness >= 0.8:
+        return {\"text\": \"Healthy\", \"color\": \"text-green-600\"}
+    elif completeness >= 0.5:
+        return {\"text\": \"Needs Work\", \"color\": \"text-yellow-600\"}
+    else:
+        return {\"text\": \"Incomplete\", \"color\": \"text-red-600\"}
+
+
+class TestPersonaUI:
+    def test_persona_health_indicator(self):
+        # Healthy persona
+        healthy = PersonaProfile(
+            id=\"h1\",
+            name=\"Healthy Host\",
+            agent_type=AgentType.HOST,
+            personality_traits=[\"enthusiastic\", \"warm\"],
+            catchphrases=[\"Let's go!\"],
+            voice_style=VoiceStyle.ENERGETIC,
+            default_emotion=\"excited\",
+            emotional_range=[\"excited\", \"curious\", \"thoughtful\"],
+            background_story=\"Experienced host\",
+        )
+        status = get_health_status(healthy)
+        assert status[\"text\"] == \"Healthy\"
+        assert status[\"color\"] == \"text-green-600\"
+
+        # Needs work (missing some fields)
+        medium = PersonaProfile(
+            id=\"m1\",
+            name=\"Medium Host\",
+            agent_type=AgentType.HOST,
+            personality_traits=[],  # missing traits
+            catchphrases=[\"Okay\"],
+            voice_style=VoiceStyle.CALM,
+            default_emotion=\"ok\",
+            emotional_range=[\"ok\", \"fine\"],
+            background_story=\"\",  # missing background
+        )
+        status = get_health_status(medium)
+        assert status[\"text\"] == \"Needs Work\"
+        assert status[\"color\"] == \"text-yellow-600\"
+
+        # Incomplete (missing many fields)
+        low = PersonaProfile(
+            id=\"l1\",
+            name=\"\",  # empty name
+            agent_type=AgentType.HOST,
+            personality_traits=[],
+            catchphrases=[],
+            voice_style=VoiceStyle.CASUAL,
+            default_emotion=\"neutral\",
+            emotional_range=[],
+            background_story=\"\",
+        )
+        status = get_health_status(low)
+        assert status[\"text\"] == \"Incomplete\"
+        assert status[\"color\"] == \"text-red-600\"
+
+
