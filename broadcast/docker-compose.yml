@@ -1,0 +1,14 @@
+version: "3.9"
+
+services:
+  broadcast:
+    build: .
+    ports:
+      - "8100:8100"
+    env_file:
+      - .env
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./broadcast:/app/broadcast
+    restart: unless-stopped
