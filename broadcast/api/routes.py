@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from time import time
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 
 from broadcast.api.schemas import (
     BroadcastStatusResponse,
@@ -14,6 +15,7 @@ from broadcast.api.schemas import (
     SceneListResponse,
 )
 from broadcast.config import Settings
+from broadcast.events.bus import EventBus
 from broadcast.obs.controller import ObsController, ObsConnectionError
 from broadcast.streaming.multiplexer import Multiplexer
 
@@ -28,6 +30,7 @@ _obs = ObsController(
     password=_settings.obs_password,
 )
 _mux = Multiplexer(_settings)
+_event_bus = EventBus()
 
 
 def get_mux() -> Multiplexer:
@@ -47,6 +50,15 @@ def _build_platform_responses(status) -> dict[str, PlatformConfigResponse]:
     }
 
 
+def _publish_event(event_type: str, **extra) -> None:
+    """Publish a broadcast event asynchronously."""
+    asyncio.create_task(_event_bus.publish("broadcast", {
+        "type": event_type,
+        "timestamp": time(),
+        **extra,
+    }))
+
+
 @router.get("/status", response_model=BroadcastStatusResponse)
 def get_status():
     """Get current broadcast status."""
@@ -59,16 +71,18 @@ def get_status():
 
 
 @router.post("/start", response_model=BroadcastStatusResponse)
-def start_broadcast():
+async def start_broadcast():
     """Start broadcasting to all configured platforms."""
     _mux.start_broadcast()
+    _publish_event("broadcast.started")
     return get_status()
 
 
 @router.post("/stop", response_model=BroadcastStatusResponse)
-def stop_broadcast():
+async def stop_broadcast():
     """Stop broadcasting."""
     _mux.stop_broadcast()
+    _publish_event("broadcast.stopped")
     return get_status()
 
 
@@ -86,16 +100,28 @@ def list_scenes():
 
 
 @router.post("/scenes/{scene_name}")
-def switch_scene(scene_name: str):
+async def switch_scene(scene_name: str):
     """Switch to a named OBS scene."""
     try:
         asyncio.run(_obs.switch_scene(scene_name))
+        _publish_event("scene.switched", scene=scene_name)
         return {"scene": scene_name, "status": "switched"}
     except ObsConnectionError:
         raise HTTPException(status_code=503, detail="OBS not connected")
     except Exception as exc:
         logger.exception("Failed to switch OBS scene")
         raise HTTPException(status_code=500, detail=str(exc))
+
+
+@router.websocket("/ws")
+async def broadcast_events(websocket: WebSocket):
+    """WebSocket endpoint for real-time broadcast events."""
+    await websocket.accept()
+    try:
+        async for event in _event_bus.subscribe("broadcast"):
+            await websocket.send_json(event)
+    except WebSocketDisconnect:
+        pass
 
 
 @router.get("/platforms")

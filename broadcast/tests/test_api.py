@@ -103,3 +103,19 @@ def test_update_platforms_validates():
     data = resp.json()
     assert data["twitch"]["rtmp_url"].endswith("new_key_123")
     assert data["youtube"]["error"] is not None
+
+
+@patch("broadcast.streaming.multiplexer.subprocess.Popen")
+def test_websocket_endpoint(mock_popen):
+    """WebSocket receives live broadcast events via the event bus."""
+    mock_process = MagicMock()
+    mock_process.pid = 12345
+    mock_popen.return_value = mock_process
+
+    _configure_platform("twitch", "live_12345")
+
+    client = TestClient(app)
+    with client.websocket_connect("/broadcast/ws") as ws:
+        client.post("/broadcast/start")
+        data = ws.receive_json()
+        assert data["type"] == "broadcast.started"
