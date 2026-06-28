@@ -213,3 +213,142 @@ class TestChatRepository:
         repo.add(msg2)
         assert repo.count() == 1
         assert repo.recent(1)[0].text == "First"  # unchanged
+
+
+# ── MockChatBridge tests ───────────────────────────────────────────────
+
+class TestMockChatBridge:
+    @pytest.mark.asyncio
+    async def test_bridge_generates_messages(self):
+        from broadcast.audience.chat import MockChatBridge
+        bridge = MockChatBridge(rate=10.0)  # fast rate for testing
+        messages = []
+        async for msg in bridge.subscribe():
+            messages.append(msg)
+            if len(messages) >= 3:
+                break
+        assert len(messages) == 3
+        for msg in messages:
+            assert isinstance(msg, ChatMessage)
+            assert msg.platform == ChatPlatform.MOCK
+            assert msg.text
+
+    @pytest.mark.asyncio
+    async def test_bridge_start_stop(self):
+        from broadcast.audience.chat import MockChatBridge
+        bridge = MockChatBridge(rate=10.0)
+        bridge.start()
+        assert bridge.running is True
+        bridge.stop()
+        assert bridge.running is False
+
+    @pytest.mark.asyncio
+    async def test_bridge_rejects_negative_rate(self):
+        from broadcast.audience.chat import MockChatBridge
+        with pytest.raises(ValueError, match="Rate must be positive"):
+            MockChatBridge(rate=-1)
+
+    def test_personas_defined(self):
+        from broadcast.audience.chat import MOCK_VIEWER_PERSONAS
+        assert len(MOCK_VIEWER_PERSONAS) >= 5
+        for persona in MOCK_VIEWER_PERSONAS:
+            assert "id" in persona
+            assert "name" in persona
+            assert "messages" in persona
+            assert len(persona["messages"]) >= 2
+
+
+# ── PollEngine tests ─────────────────────────────────────────────────────
+
+class TestPollEngine:
+    def test_create_poll(self):
+        from broadcast.audience.polls import PollEngine
+        engine = PollEngine()
+        poll = engine.create_poll("Favorite color?", ["Red", "Blue", "Green"], 60)
+        assert poll.question == "Favorite color?"
+        assert poll.status == PollStatus.ACTIVE
+        assert len(poll.options) == 3
+        assert poll.id
+
+    def test_vote(self):
+        from broadcast.audience.polls import PollEngine
+        engine = PollEngine()
+        poll = engine.create_poll("Test?", ["A", "B"], 60)
+        vote = engine.vote(poll.id, 0, "user1")
+        assert vote.poll_id == poll.id
+        assert vote.option_index == 0
+        updated = engine.get_poll(poll.id)
+        assert updated.options[0].votes == 1
+        assert updated.options[1].votes == 0
+
+    def test_vote_dedup(self):
+        """One user can only vote once per poll."""
+        from broadcast.audience.polls import PollEngine
+        engine = PollEngine()
+        poll = engine.create_poll("Test?", ["A", "B"], 60)
+        engine.vote(poll.id, 0, "user1")
+        with pytest.raises(ValueError, match="already voted"):
+            engine.vote(poll.id, 1, "user1")
+
+    def test_close_poll(self):
+        from broadcast.audience.polls import PollEngine
+        engine = PollEngine()
+        poll = engine.create_poll("Test?", ["A", "B"], 60)
+        closed = engine.close_poll(poll.id)
+        assert closed.status == PollStatus.CLOSED
+        assert closed.closed_at is not None
+
+    def test_get_results(self):
+        from broadcast.audience.polls import PollEngine
+        engine = PollEngine()
+        poll = engine.create_poll("Best?", ["Option 1", "Option 2"], 60)
+        engine.vote(poll.id, 0, "u1")
+        engine.vote(poll.id, 1, "u2")
+        engine.vote(poll.id, 0, "u3")
+        results = engine.get_results(poll.id)
+        assert results["total_votes"] == 3
+        assert results["options"][0]["votes"] == 2
+        assert results["options"][1]["votes"] == 1
+        assert results["winner"] == "Option 1"
+
+    def test_list_polls(self):
+        from broadcast.audience.polls import PollEngine
+        engine = PollEngine()
+        p1 = engine.create_poll("Q1?", ["A", "B"], 30)
+        p2 = engine.create_poll("Q2?", ["C", "D"], 30)
+        engine.close_poll(p1.id)
+        all_polls = engine.list_polls(include_closed=True)
+        assert len(all_polls) == 2
+        active_only = engine.list_polls(include_closed=False)
+        assert len(active_only) == 1
+        assert active_only[0].id == p2.id
+
+    def test_vote_on_nonexistent_poll(self):
+        from broadcast.audience.polls import PollEngine
+        engine = PollEngine()
+        with pytest.raises(ValueError, match="not found"):
+            engine.vote("nonexistent", 0, "user1")
+
+    def test_vote_invalid_option(self):
+        from broadcast.audience.polls import PollEngine
+        engine = PollEngine()
+        poll = engine.create_poll("Test?", ["A", "B"], 60)
+        with pytest.raises(ValueError, match="Invalid option"):
+            engine.vote(poll.id, 99, "user1")
+
+    def test_auto_close_expired_poll(self):
+        from broadcast.audience.polls import PollEngine
+        engine = PollEngine()
+        poll = engine.create_poll("Quick?", ["A", "B"], duration_seconds=0)
+        # Duration 0 means already expired on next vote-triggered check
+        with pytest.raises(ValueError, match="closed"):
+            engine.vote(poll.id, 0, "user1")
+
+    def test_get_active_poll(self):
+        from broadcast.audience.polls import PollEngine
+        engine = PollEngine()
+        assert engine.get_active_poll() is None
+        poll = engine.create_poll("Active?", ["A", "B"], 60)
+        assert engine.get_active_poll() is not None
+        engine.close_poll(poll.id)
+        assert engine.get_active_poll() is None
