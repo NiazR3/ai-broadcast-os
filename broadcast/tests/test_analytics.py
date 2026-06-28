@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from time import time
 
 import pytest
 
+from broadcast.analytics.collector import MetricsCollector
 from broadcast.analytics.database import AnalyticsDatabase
 from broadcast.analytics.models import (
     AnalyticsEvent,
@@ -16,6 +18,8 @@ from broadcast.analytics.models import (
     MetricsSnapshot,
     ReportSummary,
 )
+from broadcast.analytics.session import SessionManager
+from broadcast.events.bus import EventBus
 
 
 # ── Model tests ────────────────────────────────────────────────────
@@ -176,3 +180,138 @@ class TestAnalyticsDatabase:
     def test_close(self, db):
         db.close()  # should not raise
         db.close()  # idempotent
+
+
+# ── SessionManager tests ───────────────────────────────────────────
+
+class TestSessionManager:
+    def test_create_session(self, db):
+        sm = SessionManager(db)
+        s = sm.create_session(platforms=["twitch", "youtube"])
+        assert s.status == "live"
+        assert "twitch" in s.platforms
+        assert s.id.startswith("sess_")
+
+    def test_close_session_computes_aggregates(self, db):
+        sm = SessionManager(db)
+        s = sm.create_session()
+        # Add some test data
+        db.insert_snapshot(MetricsSnapshot(id="m1", session_id=s.id, timestamp=100.0, viewer_count=10))
+        db.insert_snapshot(MetricsSnapshot(id="m2", session_id=s.id, timestamp=110.0, viewer_count=50))
+        closed = sm.close_session(s.id)
+        assert closed is not None
+        assert closed.status == "ended"
+        assert closed.peak_viewers == 50
+        assert closed.avg_viewers == 30.0
+
+    def test_close_session_not_found(self, db):
+        sm = SessionManager(db)
+        result = sm.close_session("nonexistent")
+        assert result is None
+
+    def test_close_session_already_ended(self, db):
+        sm = SessionManager(db)
+        s = sm.create_session()
+        sm.close_session(s.id)
+        s2 = sm.close_session(s.id)  # second close should not raise
+        assert s2 is not None
+        assert s2.status == "ended"
+
+    def test_get_active_session(self, db):
+        sm = SessionManager(db)
+        assert sm.get_active_session() is None
+        sm.create_session()
+        assert sm.get_active_session() is not None
+
+    def test_list_sessions(self, db):
+        sm = SessionManager(db)
+        s1 = sm.create_session()
+        sm.close_session(s1.id)
+        s2 = sm.create_session()
+        sessions = sm.list_sessions()
+        assert len(sessions) >= 2
+
+
+# ── MetricsCollector tests ─────────────────────────────────────────
+
+class TestMetricsCollector:
+    def test_start_stop(self, db):
+        bus = EventBus()
+        sm = SessionManager(db)
+        mc = MetricsCollector(db, bus, sm)
+        mc.start()
+        assert mc.is_running
+        mc.stop()
+        assert not mc.is_running
+
+    def test_broadcast_start_creates_session(self, db):
+        bus = EventBus()
+        sm = SessionManager(db)
+        mc = MetricsCollector(db, bus, sm)
+
+        async def _test():
+            mc.start()
+            await asyncio.sleep(0)  # Let _run() subscribe before publishing
+            await bus.publish("broadcast", {"type": "broadcast.started", "platforms": ["twitch"]})
+            await asyncio.sleep(0.1)
+            mc.stop()
+
+        asyncio.run(_test())
+
+        active = sm.get_active_session()
+        assert active is not None
+        assert "twitch" in active.platforms
+
+    def test_collector_logs_chat_events(self, db):
+        bus = EventBus()
+        sm = SessionManager(db)
+        mc = MetricsCollector(db, bus, sm)
+
+        # Create session synchronously
+        s = sm.create_session()
+        mc._current_session_id = s.id
+
+        async def _test():
+            mc.start()
+            await asyncio.sleep(0)  # Let _run() subscribe before publishing
+            await bus.publish("broadcast", {
+                "type": "audience.chat.message", "user": "alice", "text": "hello", "timestamp": 100.0,
+            })
+            await asyncio.sleep(0.1)
+            mc.stop()
+
+        asyncio.run(_test())
+
+        events = db.query_events(s.id)
+        chat_events = [e for e in events if e.event_type == "audience.chat.message"]
+        assert len(chat_events) > 0
+
+    def test_collector_logs_scene_events(self, db):
+        bus = EventBus()
+        sm = SessionManager(db)
+        mc = MetricsCollector(db, bus, sm)
+        mc.start()
+
+        s = sm.create_session()
+        mc._current_session_id = s.id
+        mc._log_event("scene.switched", {"scene": "Gameplay"})
+
+        mc.stop()
+        events = db.query_events(s.id, event_type="scene.switched")
+        assert len(events) == 1
+        assert events[0].payload.get("scene") == "Gameplay"
+
+    def test_take_snapshot(self, db):
+        bus = EventBus()
+        sm = SessionManager(db)
+        mc = MetricsCollector(db, bus, sm)
+        mc.start()
+
+        s = sm.create_session()
+        mc._current_session_id = s.id
+        mc._chat_count = 5
+        mc._take_snapshot()
+
+        mc.stop()
+        snaps = db.query_snapshots(s.id)
+        assert len(snaps) >= 1
