@@ -9,6 +9,7 @@ from time import time
 import pytest
 
 from broadcast.analytics.collector import MetricsCollector
+from broadcast.analytics.reporting import ReportGenerator
 from broadcast.analytics.database import AnalyticsDatabase
 from broadcast.analytics.models import (
     AnalyticsEvent,
@@ -315,3 +316,65 @@ class TestMetricsCollector:
         mc.stop()
         snaps = db.query_snapshots(s.id)
         assert len(snaps) >= 1
+
+
+# ── ReportGenerator tests ──────────────────────────────────────────
+
+class TestReportGenerator:
+    def test_build_report_returns_none_for_missing(self, db):
+        rg = ReportGenerator(db)
+        assert rg.build_report("nonexistent") is None
+
+    def test_build_report_with_data(self, db):
+        sm = SessionManager(db)
+        s = sm.create_session(platforms=["twitch"])
+        db.insert_snapshot(MetricsSnapshot(id="m1", session_id=s.id, timestamp=100.0, viewer_count=10))
+        db.insert_snapshot(MetricsSnapshot(id="m2", session_id=s.id, timestamp=110.0, viewer_count=50))
+        db.insert_event(AnalyticsEvent(
+            id="e1", session_id=s.id, timestamp=100.0,
+            event_type="audience.chat.message", payload={"user": "alice"},
+        ))
+        sm.close_session(s.id)
+
+        rg = ReportGenerator(db)
+        report = rg.build_report(s.id)
+        assert report is not None
+        assert report.session_id == s.id
+        assert report.summary.peak_viewers == 50
+        assert report.summary.avg_viewers == 30.0
+        assert report.engagement.total_chat_messages == 1
+        assert len(report.timeline) >= 1
+
+    def test_build_csv(self, db):
+        sm = SessionManager(db)
+        s = sm.create_session()
+        db.insert_snapshot(MetricsSnapshot(id="m1", session_id=s.id, timestamp=100.0, viewer_count=10))
+        db.insert_snapshot(MetricsSnapshot(id="m2", session_id=s.id, timestamp=110.0, viewer_count=20))
+
+        rg = ReportGenerator(db)
+        csv_str = rg.build_csv(s.id)
+        assert csv_str is not None
+        assert "timestamp,viewer_count,chat_rate" in csv_str
+        assert "10" in csv_str
+        assert "20" in csv_str
+
+    def test_build_csv_no_data(self, db):
+        rg = ReportGenerator(db)
+        assert rg.build_csv("nonexistent") is None
+
+    def test_build_dashboard_no_data(self, db):
+        rg = ReportGenerator(db)
+        dash = rg.build_dashboard()
+        assert dash["live_session"] is None
+        assert dash["totals"]["total_sessions"] == 0
+
+    def test_build_dashboard_with_data(self, db):
+        sm = SessionManager(db)
+        s = sm.create_session(platforms=["twitch"])
+        sm.close_session(s.id)
+
+        rg = ReportGenerator(db)
+        dash = rg.build_dashboard()
+        assert dash["live_session"] is None  # closed
+        assert len(dash["recent_sessions"]) >= 1
+        assert dash["totals"]["total_sessions"] == 1
