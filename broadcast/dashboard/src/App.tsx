@@ -4,6 +4,8 @@ import { ConfigPanel } from "./components/ConfigPanel";
 import { AgentPanel } from "./components/AgentPanel";
 import { Teleprompter } from "./components/Teleprompter";
 import { PersonaPanel } from "./components/PersonaPanel";
+import { ChatPanel } from "./components/ChatPanel";
+import { PollPanel } from "./components/PollPanel";
 import { useWebSocket } from "./hooks/useWebSocket";
 
 function App() {
@@ -50,6 +52,16 @@ function App() {
         {/* Config */}
         <section className="bg-white rounded-lg shadow-sm p-6">
           <ConfigPanel />
+        </section>
+
+        {/* Audience chat */}
+        <section className="bg-white rounded-lg shadow-sm p-6">
+          <ChatPanel />
+        </section>
+
+        {/* Audience polls */}
+        <section className="bg-white rounded-lg shadow-sm p-6">
+          <PollPanel />
         </section>
       </main>
     </div>

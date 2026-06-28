@@ -231,3 +231,141 @@ export async function removeCoHostPersona(): Promise<void> {
   const res = await fetch(`${API_BASE}/agent/cohost/persona`, { method: "DELETE" });
   if (!res.ok) throw new Error("Failed to remove co-host persona");
 }
+
+// ── Audience API types ────────────────────────────────────────────────
+export interface ChatMessage {
+  id: string;
+  platform: string;
+  user: { id: string; display_name: string; platform: string; role: string; badges: string[] };
+  text: string;
+  timestamp: number;
+  moderated: boolean;
+  moderation_action: string | null;
+}
+
+export interface ModerationRule {
+  id: string;
+  pattern: string;
+  action: string;
+  reason: string;
+  enabled: boolean;
+  created_at: number;
+}
+
+export interface Poll {
+  id: string;
+  question: string;
+  options: { text: string; votes: number }[];
+  status: "pending" | "active" | "closed";
+  duration_seconds: number;
+  created_at: number;
+  closed_at: number | null;
+}
+
+export interface AudienceStats {
+  total_messages: number;
+  unique_users: number;
+  messages_per_minute: number;
+  top_chatters: { user: string; count: number }[];
+}
+
+// ── Audience API functions ────────────────────────────────────────────
+
+export async function getChat(limit = 50, flagged = false): Promise<ChatMessage[]> {
+  const params = new URLSearchParams({ limit: String(limit), flagged: String(flagged) });
+  const res = await fetch(`${API_BASE}/audience/chat?${params}`);
+  if (!res.ok) throw new Error("Failed to fetch chat");
+  return res.json();
+}
+
+export async function injectChat(text: string, userName = "TestUser", platform = "mock"): Promise<ChatMessage> {
+  const res = await fetch(`${API_BASE}/audience/chat`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text, user_name: userName, platform }),
+  });
+  if (!res.ok) throw new Error("Failed to inject chat");
+  return res.json();
+}
+
+export async function flagMessage(messageId: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/audience/chat/${messageId}/flag`, { method: "POST" });
+  if (!res.ok) throw new Error("Failed to flag message");
+}
+
+export async function moderateMessage(messageId: string, action: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/audience/chat/${messageId}/moderate`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action }),
+  });
+  if (!res.ok) throw new Error("Failed to moderate message");
+}
+
+export async function getModerationRules(): Promise<ModerationRule[]> {
+  const res = await fetch(`${API_BASE}/audience/moderation/rules`);
+  if (!res.ok) throw new Error("Failed to fetch rules");
+  return res.json();
+}
+
+export async function createModerationRule(pattern: string, action = "flag", reason = ""): Promise<ModerationRule> {
+  const res = await fetch(`${API_BASE}/audience/moderation/rules`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ pattern, action, reason }),
+  });
+  if (!res.ok) throw new Error("Failed to create rule");
+  return res.json();
+}
+
+export async function deleteModerationRule(ruleId: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/audience/moderation/rules/${ruleId}`, { method: "DELETE" });
+  if (!res.ok) throw new Error("Failed to delete rule");
+}
+
+export async function getPolls(includeClosed = false): Promise<Poll[]> {
+  const res = await fetch(`${API_BASE}/audience/polls?include_closed=${includeClosed}`);
+  if (!res.ok) throw new Error("Failed to fetch polls");
+  return res.json();
+}
+
+export async function createPoll(question: string, options: string[], durationSeconds = 60): Promise<Poll> {
+  const res = await fetch(`${API_BASE}/audience/polls`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ question, options, duration_seconds: durationSeconds }),
+  });
+  if (!res.ok) throw new Error("Failed to create poll");
+  return res.json();
+}
+
+export async function votePoll(pollId: string, optionIndex: number, userId: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/audience/polls/${pollId}/vote`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ option_index: optionIndex, user_id: userId }),
+  });
+  if (!res.ok) throw new Error("Failed to vote");
+}
+
+export async function closePoll(pollId: string): Promise<Poll> {
+  const res = await fetch(`${API_BASE}/audience/polls/${pollId}/close`, { method: "POST" });
+  if (!res.ok) throw new Error("Failed to close poll");
+  return res.json();
+}
+
+export async function getAudienceStats(): Promise<AudienceStats> {
+  const res = await fetch(`${API_BASE}/audience/stats`);
+  if (!res.ok) throw new Error("Failed to fetch stats");
+  return res.json();
+}
+
+export async function startSimulation(rate = 0.33): Promise<void> {
+  const res = await fetch(`${API_BASE}/audience/simulation/start?rate=${rate}`, { method: "POST" });
+  if (!res.ok) throw new Error("Failed to start simulation");
+}
+
+export async function stopSimulation(): Promise<void> {
+  const res = await fetch(`${API_BASE}/audience/simulation/stop`, { method: "POST" });
+  if (!res.ok) throw new Error("Failed to stop simulation");
+}
