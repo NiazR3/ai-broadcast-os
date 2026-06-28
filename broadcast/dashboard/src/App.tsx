@@ -1,6 +1,8 @@
 import { BroadcastStatus } from "./components/BroadcastStatus";
 import { SceneSwitcher } from "./components/SceneSwitcher";
 import { ConfigPanel } from "./components/ConfigPanel";
+import { AgentPanel } from "./components/AgentPanel";
+import { Teleprompter } from "./components/Teleprompter";
 import { useWebSocket } from "./hooks/useWebSocket";
 
 function App() {
@@ -23,6 +25,16 @@ function App() {
 
         {/* Broadcast status + controls */}
         <BroadcastStatus />
+
+        {/* Teleprompter */}
+        <section className="bg-white rounded-lg shadow-sm p-6">
+          <Teleprompter />
+        </section>
+
+        {/* Director + Agent controls */}
+        <section className="bg-white rounded-lg shadow-sm p-6">
+          <AgentPanel />
+        </section>
 
         {/* Scene switcher */}
         <section className="bg-white rounded-lg shadow-sm p-6">

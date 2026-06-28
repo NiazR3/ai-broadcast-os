@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from broadcast.config import Settings
 from broadcast.api.routes import router
+from broadcast.agents.router import router as agent_router
 from broadcast.middleware.rate_limit import RateLimitMiddleware
 from broadcast.middleware.security_headers import SecurityHeadersMiddleware
 
@@ -24,6 +25,7 @@ app.add_middleware(
 )
 
 app.include_router(router)
+app.include_router(agent_router)
 
 
 @app.get("/health")
