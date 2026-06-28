@@ -3,7 +3,6 @@
 from __future__ import annotations
 import logging
 import subprocess
-import shlex
 from time import time
 from typing import Optional
 from broadcast.streaming.platforms import (
@@ -74,7 +73,7 @@ class Multiplexer:
         output_urls = [ps.rtmp_url for _, ps in ready_platforms]
         # Use tee muxer: map=0 copies video+audio to each output
         tee_output = " | ".join(
-            f"[f=flv]{shlex.quote(url)}" for url in output_urls
+            f"[f=flv]{url}" for url in output_urls
         )
         cmd = [
             "ffmpeg",
