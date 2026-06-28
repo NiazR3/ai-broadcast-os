@@ -6,6 +6,8 @@ import { Teleprompter } from "./components/Teleprompter";
 import { PersonaPanel } from "./components/PersonaPanel";
 import { ChatPanel } from "./components/ChatPanel";
 import { PollPanel } from "./components/PollPanel";
+import { ResearchPanel } from "./components/ResearchPanel";
+import { MediaPanel } from "./components/MediaPanel";
 import { useWebSocket } from "./hooks/useWebSocket";
 
 function App() {
@@ -62,6 +64,16 @@ function App() {
         {/* Audience polls */}
         <section className="bg-white rounded-lg shadow-sm p-6">
           <PollPanel />
+        </section>
+
+        {/* Research */}
+        <section className="bg-white rounded-lg shadow-sm p-6">
+          <ResearchPanel />
+        </section>
+
+        {/* Media assets */}
+        <section className="bg-white rounded-lg shadow-sm p-6">
+          <MediaPanel />
         </section>
       </main>
     </div>

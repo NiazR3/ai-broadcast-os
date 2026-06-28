@@ -369,3 +369,136 @@ export async function stopSimulation(): Promise<void> {
   const res = await fetch(`${API_BASE}/audience/simulation/stop`, { method: "POST" });
   if (!res.ok) throw new Error("Failed to stop simulation");
 }
+
+// ── Research API types ─────────────────────────────────────────────
+export interface ResearchResult {
+  id: string;
+  topic_id: string;
+  summary: string;
+  key_points: string[];
+  sources: { url: string; title: string; snippet: string; relevance_score: number }[];
+  fact_checks: { claim: string; verdict: string; explanation: string }[];
+  created_at: number;
+}
+
+export interface TopicExtract {
+  topics: string[];
+  text: string;
+}
+
+// ── Research API functions ─────────────────────────────────────────
+export async function submitResearch(query: string, segmentId = "", segmentTitle = ""): Promise<ResearchResult> {
+  const res = await fetch(`${API_BASE}/research/submit`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ query, segment_id: segmentId, segment_title: segmentTitle }),
+  });
+  if (!res.ok) throw new Error("Failed to submit research");
+  return res.json();
+}
+
+export async function listResearchResults(): Promise<ResearchResult[]> {
+  const res = await fetch(`${API_BASE}/research/results`);
+  if (!res.ok) throw new Error("Failed to list research results");
+  return res.json();
+}
+
+export async function getResearchResult(id: string): Promise<ResearchResult> {
+  const res = await fetch(`${API_BASE}/research/results/${id}`);
+  if (!res.ok) throw new Error("Failed to get research result");
+  return res.json();
+}
+
+export async function extractTopics(text: string): Promise<TopicExtract> {
+  const res = await fetch(`${API_BASE}/research/extract`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text }),
+  });
+  if (!res.ok) throw new Error("Failed to extract topics");
+  return res.json();
+}
+
+// ── Media API types ────────────────────────────────────────────────
+export type ChartType = "bar" | "line" | "pie";
+export type AssetType = "chart" | "text_overlay";
+
+export interface ChartConfig {
+  chart_type: ChartType;
+  title: string;
+  labels: string[];
+  datasets: { label: string; values: number[] }[];
+  width?: number;
+  height?: number;
+  colors?: string[];
+}
+
+export interface TextOverlayConfig {
+  text: string;
+  font_size?: number;
+  color?: string;
+  background_color?: string;
+  width?: number;
+  height?: number;
+}
+
+export interface MediaAsset {
+  id: string;
+  type: AssetType;
+  segment_id: string;
+  svg_content: string;
+  metadata: Record<string, unknown>;
+  status: "generated" | "assigned" | "deleted";
+  created_at: number;
+}
+
+// ── Media API functions ────────────────────────────────────────────
+export async function createChart(config: ChartConfig): Promise<MediaAsset> {
+  const res = await fetch(`${API_BASE}/media/chart`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(config),
+  });
+  if (!res.ok) throw new Error("Failed to create chart");
+  return res.json();
+}
+
+export async function createTextOverlay(config: TextOverlayConfig): Promise<MediaAsset> {
+  const res = await fetch(`${API_BASE}/media/text`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(config),
+  });
+  if (!res.ok) throw new Error("Failed to create text overlay");
+  return res.json();
+}
+
+export async function listAssets(segmentId?: string, type?: AssetType): Promise<MediaAsset[]> {
+  const params = new URLSearchParams();
+  if (segmentId) params.set("segment_id", segmentId);
+  if (type) params.set("type", type);
+  const query = params.toString() ? `?${params}` : "";
+  const res = await fetch(`${API_BASE}/media/assets${query}`);
+  if (!res.ok) throw new Error("Failed to list assets");
+  return res.json();
+}
+
+export async function getAsset(id: string): Promise<MediaAsset> {
+  const res = await fetch(`${API_BASE}/media/assets/${id}`);
+  if (!res.ok) throw new Error("Failed to get asset");
+  return res.json();
+}
+
+export async function deleteAsset(id: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/media/assets/${id}`, { method: "DELETE" });
+  if (!res.ok) throw new Error("Failed to delete asset");
+}
+
+export async function assignAsset(assetId: string, segmentId: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/media/assets/${assetId}/assign`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ segment_id: segmentId }),
+  });
+  if (!res.ok) throw new Error("Failed to assign asset");
+}
