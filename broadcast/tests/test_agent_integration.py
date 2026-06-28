@@ -1,7 +1,16 @@
 """Integration tests for the complete agent-driven broadcast lifecycle."""
 
+import pytest
 from fastapi.testclient import TestClient
 from broadcast.main import app
+from broadcast.agents.router import _producer
+
+
+@pytest.fixture(autouse=True)
+def clear_agent_state():
+    """Ensure clean agent state between tests (module-level singletons)."""
+    _producer._episodes.clear()
+    yield
 
 
 class TestAgentBroadcastLifecycle:
@@ -71,7 +80,7 @@ class TestAgentBroadcastLifecycle:
         client.post("/agent/episode", json={"title": "Ep 2"})
         resp = client.get("/agent/episodes")
         data = resp.json()
-        assert len(data) >= 2
+        assert len(data) == 2
         titles = [e["title"] for e in data]
         assert "Ep 1" in titles
         assert "Ep 2" in titles

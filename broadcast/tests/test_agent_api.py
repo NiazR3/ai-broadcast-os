@@ -3,11 +3,19 @@
 import pytest
 from fastapi.testclient import TestClient
 from broadcast.main import app
+from broadcast.agents.router import _producer
 
 
 @pytest.fixture
 def client():
     return TestClient(app)
+
+
+@pytest.fixture(autouse=True)
+def clear_agent_state():
+    """Ensure clean agent state between tests (module-level singletons)."""
+    _producer._episodes.clear()
+    yield
 
 
 class TestEpisodeEndpoints:
@@ -29,7 +37,7 @@ class TestEpisodeEndpoints:
         resp = client.get("/agent/episodes")
         assert resp.status_code == 200
         data = resp.json()
-        assert len(data) >= 2
+        assert len(data) == 2
 
     def test_get_episode(self, client):
         create = client.post("/agent/episode", json={"title": "My Show"})

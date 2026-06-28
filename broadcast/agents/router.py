@@ -110,10 +110,11 @@ def add_segment(script_id: str, body: dict) -> dict:
 def director_status() -> dict:
     """Get the director's current status."""
     seg = _director.current_segment
+    index = _director.current_segment_index
     return {
         "running": _director.running,
         "current_segment": seg.model_dump() if seg else None,
-        "current_segment_index": _director.current_segment_index,
+        "current_segment_index": index if index >= 0 else None,
         "has_more": _director.has_more,
         "script_loaded": _director.script is not None,
         "script_title": _director.script.title if _director.script else None,
@@ -139,6 +140,8 @@ def load_episode(script_id: str) -> dict:
 @router.post("/director/next")
 def director_next() -> dict:
     """Advance the director to the next segment."""
+    if _director.script is None:
+        raise HTTPException(status_code=400, detail="No script loaded. Load an episode first.")
     segment = _director.next_segment()
     if segment is None:
         raise HTTPException(status_code=400, detail="No more segments")
@@ -161,6 +164,12 @@ def director_seek(segment_id: str) -> dict:
     segment = _director.seek_to_segment(segment_id)
     if segment is None:
         raise HTTPException(status_code=404, detail="Segment not found")
+    _publish_agent_event("agent.director.segment_started",
+        segment_id=segment.id,
+        segment_title=segment.title,
+        segment_type=segment.type.value,
+        duration_seconds=segment.duration_seconds,
+    )
     return {
         "segment": segment.model_dump(),
         "segment_index": _director.current_segment_index,
