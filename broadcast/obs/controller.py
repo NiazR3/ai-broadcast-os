@@ -37,7 +37,11 @@ class ObsController:
         """Connect to OBS WebSocket server.
 
         Returns True on success. Raises ObsConnectionError on failure.
+        Idempotent: if already connected, returns True immediately.
         """
+        if self._connected:
+            logger.info("Already connected to OBS at %s:%s", self.host, self.port)
+            return True
         try:
             self.ws = obsws(self.host, self.port, self.password)
             await asyncio.to_thread(self.ws.connect)
@@ -52,9 +56,13 @@ class ObsController:
     async def disconnect(self) -> None:
         """Disconnect from OBS WebSocket. Safe to call when not connected."""
         if self.ws and self._connected:
-            await asyncio.to_thread(self.ws.disconnect)
-            self._connected = False
-            logger.info("Disconnected from OBS")
+            try:
+                await asyncio.to_thread(self.ws.disconnect)
+            except Exception:
+                logger.exception("Error during OBS disconnect")
+            finally:
+                self._connected = False
+                logger.info("Disconnected from OBS")
 
     async def switch_scene(self, scene_name: str) -> bool:
         """Switch to a named scene in OBS. Returns True on success."""
