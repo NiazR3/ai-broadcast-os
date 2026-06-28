@@ -13,6 +13,7 @@ from broadcast.audience.models import (
     PollStatus, PollVote, ChatActivity,
 )
 from broadcast.audience.chat import ChatRepository
+from broadcast.audience.moderation import ModerationEngine
 
 
 # ── Model tests ────────────────────────────────────────────────────────
@@ -352,3 +353,131 @@ class TestPollEngine:
         assert engine.get_active_poll() is not None
         engine.close_poll(poll.id)
         assert engine.get_active_poll() is None
+
+# ── ModerationEngine tests ─────────────────────────────────────────────
+
+class TestModerationEngine:
+    def test_clean_message_passes(self):
+        from broadcast.audience.moderation import ModerationEngine
+        engine = ModerationEngine()
+        msg = ChatMessage(
+            id="m1", platform=ChatPlatform.MOCK,
+            user=ChatUser(id="u1", display_name="U1", platform=ChatPlatform.MOCK),
+            text="Hello everyone! This is a great stream.", timestamp=1.0,
+        )
+        result = engine.check(msg)
+        assert result is None  # None = approved
+
+    def test_keyword_blocklist_flags_bad_words(self):
+        engine = ModerationEngine()
+        engine.add_rule(ModerationRule(
+            id="kr1", pattern=r"(?i)\bspam\b", action=ModerationAction.FLAG,
+            reason="Spam keyword",
+        ))
+        msg = ChatMessage(
+            id="m2", platform=ChatPlatform.MOCK,
+            user=ChatUser(id="u1", display_name="U1", platform=ChatPlatform.MOCK),
+            text="Check out my spam link!", timestamp=1.0,
+        )
+        result = engine.check(msg)
+        assert result == ModerationAction.FLAG
+
+    def test_rate_limit_exceeded(self):
+        engine = ModerationEngine()
+        msg = ChatMessage(
+            id="m3", platform=ChatPlatform.MOCK,
+            user=ChatUser(id="u1", display_name="U1", platform=ChatPlatform.MOCK),
+            text="Hello", timestamp=1.0,
+        )
+        # First message: ok
+        assert engine.check(msg) is None
+        # Second within window with high rate: should be flagged
+        msg2 = ChatMessage(
+            id="m4", platform=ChatPlatform.MOCK,
+            user=ChatUser(id="u1", display_name="U1", platform=ChatPlatform.MOCK),
+            text="Hello again", timestamp=1.05,
+        )
+        result = engine.check(msg2)
+        assert result is not None
+
+    def test_all_caps_flagged(self):
+        engine = ModerationEngine()
+        msg = ChatMessage(
+            id="m5", platform=ChatPlatform.MOCK,
+            user=ChatUser(id="u1", display_name="U1", platform=ChatPlatform.MOCK),
+            text="THIS IS A VERY LOUD MESSAGE WITH TOO MANY CAPS", timestamp=1.0,
+        )
+        result = engine.check(msg)
+        assert result is not None
+
+    def test_emoji_spam_flagged(self):
+        engine = ModerationEngine()
+        msg = ChatMessage(
+            id="m6", platform=ChatPlatform.MOCK,
+            user=ChatUser(id="u1", display_name="U1", platform=ChatPlatform.MOCK),
+            text="\U0001f525\U0001f525\U0001f525\U0001f525\U0001f525\U0001f525\U0001f525\U0001f525\U0001f525\U0001f525\U0001f525\U0001f525\U0001f525\U0001f525", timestamp=1.0,
+        )
+        result = engine.check(msg)
+        assert result is not None
+
+    def test_url_flood_flagged(self):
+        engine = ModerationEngine()
+        msg = ChatMessage(
+            id="m7", platform=ChatPlatform.MOCK,
+            user=ChatUser(id="u1", display_name="U1", platform=ChatPlatform.MOCK),
+            text="Check http://example.com and https://test.com and http://more.com", timestamp=1.0,
+        )
+        result = engine.check(msg)
+        assert result is not None
+
+    def test_rule_crud(self):
+        engine = ModerationEngine()
+        assert len(engine.list_rules()) == 0
+        rule = ModerationRule(id="r1", pattern="bad", action=ModerationAction.FLAG, reason="Bad word")
+        engine.add_rule(rule)
+        assert len(engine.list_rules()) == 1
+        assert engine.remove_rule("r1") is True
+        assert len(engine.list_rules()) == 0
+
+    def test_remove_nonexistent_rule(self):
+        engine = ModerationEngine()
+        assert engine.remove_rule("nonexistent") is False
+
+    def test_disabled_rule_skipped(self):
+        engine = ModerationEngine()
+        rule = ModerationRule(id="r1", pattern=r"(?i)\btest\b", action=ModerationAction.FLAG, reason="Test", enabled=False)
+        engine.add_rule(rule)
+        msg = ChatMessage(
+            id="m8", platform=ChatPlatform.MOCK,
+            user=ChatUser(id="u1", display_name="U1", platform=ChatPlatform.MOCK),
+            text="This is a test message", timestamp=1.0,
+        )
+        assert engine.check(msg) is None
+
+    def test_ml_placeholder_returns_none(self):
+        from broadcast.audience.moderation import ModerationEngine
+        engine = ModerationEngine()
+        assert engine._ml_classify("Any text") is None
+
+    def test_missed_flag_detection(self):
+        engine = ModerationEngine()
+        engine.add_rule(ModerationRule(
+            id="kr1", pattern=r"(?i)\bspam\b", action=ModerationAction.FLAG,
+            reason="Spam",
+        ))
+        # 20 clean messages then a spam — the 20th triggers spot-check
+        for i in range(20):
+            msg = ChatMessage(
+                id=f"clean_{i}", platform=ChatPlatform.MOCK,
+                user=ChatUser(id="u1", display_name="U1", platform=ChatPlatform.MOCK),
+                text=f"Clean message {i}", timestamp=float(i),
+            )
+            engine.check(msg)
+        # Engine should still flag the bad message
+        spam = ChatMessage(
+            id="spam_1", platform=ChatPlatform.MOCK,
+            user=ChatUser(id="u2", display_name="U2", platform=ChatPlatform.MOCK),
+            text="This is spam", timestamp=100.0,
+        )
+        result = engine.check(spam)
+        assert result == ModerationAction.FLAG
