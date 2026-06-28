@@ -103,7 +103,7 @@ def list_scenes():
 async def switch_scene(scene_name: str):
     """Switch to a named OBS scene."""
     try:
-        asyncio.run(_obs.switch_scene(scene_name))
+        await _obs.switch_scene(scene_name)
         _publish_event("scene.switched", scene=scene_name)
         return {"scene": scene_name, "status": "switched"}
     except ObsConnectionError:
@@ -131,9 +131,19 @@ def get_platforms():
 
 
 @router.post("/platforms")
-def update_platforms(req: PlatformUpdateRequest):
+async def update_platforms(req: PlatformUpdateRequest):
     """Update stream keys and reconfigure platforms."""
     updates = {"twitch": req.twitch, "youtube": req.youtube, "facebook": req.facebook}
     for name, key in updates.items():
         _mux.update_platform(name, key)
+        status = _mux.status.platforms.get(name)
+        if status is None:
+            continue
+        if status.error:
+            if key:
+                _publish_event("platform.error", platform=name, error=status.error)
+            else:
+                _publish_event("platform.disconnected", platform=name, error=status.error)
+        else:
+            _publish_event("platform.connected", platform=name)
     return get_platforms()
