@@ -2,10 +2,15 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
+from time import time
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
+
+from broadcast.config import Settings
+from broadcast.events.bus import EventBus
 
 from broadcast.agents.dialogue import HostAgent, CoHostAgent
 from broadcast.agents.director import DirectorAgent
@@ -25,6 +30,28 @@ _producer = ProducerAgent()
 _director = DirectorAgent()
 _host = HostAgent()
 _cohost = CoHostAgent()
+_event_bus = EventBus()
+_settings = Settings()
+
+
+def _publish_agent_event(event_type: str, **extra) -> None:
+    """Publish an agent event asynchronously.
+
+    Handles both async contexts (running event loop) and sync contexts
+    (e.g. thread pool where no event loop exists).
+    """
+    payload = {
+        "type": event_type,
+        "timestamp": time(),
+        **extra,
+    }
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        # No running loop — create a temporary one (sync endpoint in thread pool)
+        asyncio.run(_event_bus.publish("broadcast", payload))
+    else:
+        loop.create_task(_event_bus.publish("broadcast", payload))
 
 
 # ── Episode endpoints ──────────────────────────────────────────────
@@ -115,6 +142,12 @@ def director_next() -> dict:
     segment = _director.next_segment()
     if segment is None:
         raise HTTPException(status_code=400, detail="No more segments")
+    _publish_agent_event("agent.director.segment_started",
+        segment_id=segment.id,
+        segment_title=segment.title,
+        segment_type=segment.type.value,
+        duration_seconds=segment.duration_seconds,
+    )
     return {
         "segment": segment.model_dump(),
         "segment_index": _director.current_segment_index,
@@ -143,6 +176,11 @@ def director_generate() -> dict:
         raise HTTPException(status_code=400, detail="No segment loaded. Load an episode and advance to a segment.")
     host_block = _host.generate_dialogue(segment)
     cohost_block = _cohost.generate_dialogue(segment, host_block.lines[0].text if host_block.lines else "")
+    _publish_agent_event("agent.dialogue.generated",
+        segment_id=segment.id,
+        host_text=host_block.lines[0].text if host_block.lines else "",
+        cohost_text=cohost_block.lines[0].text if cohost_block.lines else "",
+    )
     return {
         "segment_id": segment.id,
         "host": host_block.model_dump(),
