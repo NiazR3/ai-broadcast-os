@@ -129,6 +129,24 @@ export function PersonaPanel() {
     }
   };
 
+  const handleAssignAllToHost = async () => {
+    setError(null);
+    try {
+      // Assign all selected personas to host (one at a time)
+      for (const id of selectedIds) {
+        await assignHostPersona(id);
+      }
+      // Set the last selected persona as the host (or we could set the first one)
+      // For simplicity, we'll just fetch personas to update the UI
+      await fetchPersonas();
+
+      // Clear selection after assignment
+      setSelectedIds([]);
+    } catch {
+      setError("Failed to assign selected personas to host");
+    }
+  };
+
   const handleDragStart = (index: number) => {
     setDragIndex(index);
   };
@@ -233,6 +251,13 @@ export function PersonaPanel() {
           <div className="flex-1 text-right text-sm text-gray-500">
             {selectedIds.length} of {personas.length} selected
           </div>
+          {selectedIds.length > 0 && (
+            <button onClick={handleAssignAllToHost}
+              className="px-3 py-1.5 bg-indigo-600 text-white rounded text-sm hover:bg-indigo-700 disabled:opacity-50"
+              disabled={selectedIds.length === 0}>
+              Assign to All Hosts
+            </button>
+          )}
         </div>
       )}
 

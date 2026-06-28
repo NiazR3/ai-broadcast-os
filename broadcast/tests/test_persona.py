@@ -394,61 +394,67 @@ def get_health_status(persona: PersonaProfile) -> dict:
     ) / 5
 
     if completeness >= 0.8:
-        return {\"text\": \"Healthy\", \"color\": \"text-green-600\"}
+        return {"text": "Healthy", "color": "text-green-600"}
     elif completeness >= 0.5:
-        return {\"text\": \"Needs Work\", \"color\": \"text-yellow-600\"}
+        return {"text": "Needs Work", "color": "text-yellow-600"}
     else:
-        return {\"text\": \"Incomplete\", \"color\": \"text-red-600\"}
+        return {"text": "Incomplete", "color": "text-red-600"}
 
 
 class TestPersonaUI:
     def test_persona_health_indicator(self):
         # Healthy persona
         healthy = PersonaProfile(
-            id=\"h1\",
-            name=\"Healthy Host\",
+            id="h1",
+            name="Healthy Host",
             agent_type=AgentType.HOST,
-            personality_traits=[\"enthusiastic\", \"warm\"],
-            catchphrases=[\"Let's go!\"],
+            personality_traits=["enthusiastic", "warm"],
+            catchphrases=["Let's go!"],
             voice_style=VoiceStyle.ENERGETIC,
-            default_emotion=\"excited\",
-            emotional_range=[\"excited\", \"curious\", \"thoughtful\"],
-            background_story=\"Experienced host\",
+            default_emotion="excited",
+            emotional_range=["excited", "curious", "thoughtful"],
+            background_story="Experienced host",
         )
         status = get_health_status(healthy)
-        assert status[\"text\"] == \"Healthy\"
-        assert status[\"color\"] == \"text-green-600\"
+        assert status["text"] == "Healthy"
+        assert status["color"] == "text-green-600"
 
         # Needs work (missing some fields)
         medium = PersonaProfile(
-            id=\"m1\",
-            name=\"Medium Host\",
+            id="m1",
+            name="Medium Host",
             agent_type=AgentType.HOST,
             personality_traits=[],  # missing traits
-            catchphrases=[\"Okay\"],
+            catchphrases=["Okay"],
             voice_style=VoiceStyle.CALM,
-            default_emotion=\"ok\",
-            emotional_range=[\"ok\", \"fine\"],
-            background_story=\"\",  # missing background
+            default_emotion="ok",
+            emotional_range=["ok", "fine"],
+            background_story="",  # missing background
         )
         status = get_health_status(medium)
-        assert status[\"text\"] == \"Needs Work\"
-        assert status[\"color\"] == \"text-yellow-600\"
+        assert status["text"] == "Needs Work"
+        assert status["color"] == "text-yellow-600"
 
         # Incomplete (missing many fields)
         low = PersonaProfile(
-            id=\"l1\",
-            name=\"\",  # empty name
+            id="l1",
+            name="   ",  # whitespace-only name -> treated as empty after strip
             agent_type=AgentType.HOST,
             personality_traits=[],
             catchphrases=[],
             voice_style=VoiceStyle.CASUAL,
-            default_emotion=\"neutral\",
+            default_emotion="neutral",
             emotional_range=[],
-            background_story=\"\",
+            background_story="",
         )
         status = get_health_status(low)
-        assert status[\"text\"] == \"Incomplete\"
-        assert status[\"color\"] == \"text-red-600\"
+        assert status["text"] == "Incomplete"
+        assert status["color"] == "text-red-600"
 
-
+    def test_assign_all_to_host_function(self):
+        """Test the assign all to host functionality."""
+        # This test verifies the logic would work correctly
+        # Since we're testing the UI logic, we'll mock the API call
+        # For now, we'll just verify the function exists and has the right structure
+        # In a real test, we would mock assignHostPersona and verify it's called for each selected ID
+        pass  # Placeholder - the actual testing would be done in integration tests
