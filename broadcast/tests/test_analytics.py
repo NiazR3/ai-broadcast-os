@@ -497,3 +497,70 @@ class TestAnalyticsAPI:
         assert resp.status_code == 200
         assert resp.headers["content-type"].startswith("text/csv")
         assert "viewer_count" in resp.text
+
+
+# ── Integration test ───────────────────────────────────────────────
+
+class TestAnalyticsIntegration:
+    """End-to-end: simulate broadcast lifecycle → metrics collected → report generated."""
+
+    def test_full_lifecycle(self, db):
+        """Simulate a complete broadcast session through EventBus."""
+        bus = EventBus()
+        sm = SessionManager(db)
+        mc = MetricsCollector(db, bus, sm)
+        mc.start()
+
+        # 1. Broadcast starts
+        s = sm.create_session(platforms=["twitch", "youtube"])
+        mc._current_session_id = s.id
+
+        # 2. Simulate events during broadcast
+        mc._on_chat_event({"type": "audience.chat.message", "user": "alice", "text": "hello!", "timestamp": 100.0})
+        mc._on_chat_event({"type": "audience.chat.message", "user": "bob", "text": "hi", "timestamp": 101.0})
+        mc._on_chat_event({"type": "audience.chat.message", "user": "alice", "text": "great stream", "timestamp": 102.0})
+        mc._log_event("scene.switched", {"scene": "Intro"})
+        mc._log_event("scene.switched", {"scene": "Gameplay"})
+        mc._log_event("audience.poll.created", {"poll_id": "poll1", "question": "Best game?"})
+
+        # 3. Take snapshots
+        db.insert_snapshot(MetricsSnapshot(id="m1", session_id=s.id, timestamp=100.0, viewer_count=10))
+        db.insert_snapshot(MetricsSnapshot(id="m2", session_id=s.id, timestamp=110.0, viewer_count=50))
+        db.insert_snapshot(MetricsSnapshot(id="m3", session_id=s.id, timestamp=120.0, viewer_count=30))
+
+        # 4. Broadcast ends
+        sm.close_session(s.id)
+        mc.stop()
+
+        # 5. Verify session data
+        session = db.get_session(s.id)
+        assert session is not None
+        assert session.status == "ended"
+        assert session.peak_viewers == 50
+        assert session.avg_viewers == 30.0
+        assert session.total_chat_messages == 3
+
+        # 6. Verify timeline events
+        events = db.query_events(s.id)
+        event_types = [e.event_type for e in events]
+        assert "audience.chat.message" in event_types
+        assert "scene.switched" in event_types
+        assert "audience.poll.created" in event_types
+
+        # 7. Generate and verify report
+        rg = ReportGenerator(db)
+        report = rg.build_report(s.id)
+        assert report is not None
+        assert report.summary.peak_viewers == 50
+        assert report.engagement.total_chat_messages == 3
+        assert report.engagement.unique_chatters == 2
+        assert len([e for e in report.timeline if e.event_type == "scene.switched"]) == 2
+
+        # 8. Verify CSV
+        csv_str = rg.build_csv(s.id)
+        assert csv_str is not None
+
+        # 9. Verify dashboard data
+        dash = rg.build_dashboard()
+        assert dash["live_session"] is None
+        assert len(dash["recent_sessions"]) >= 1

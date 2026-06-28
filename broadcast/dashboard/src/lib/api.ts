@@ -502,3 +502,99 @@ export async function assignAsset(assetId: string, segmentId: string): Promise<v
   });
   if (!res.ok) throw new Error("Failed to assign asset");
 }
+
+// ── Analytics API types ─────────────────────────────────────────────
+export interface BroadcastSession {
+  id: string;
+  started_at: number;
+  ended_at: number | null;
+  duration_seconds: number;
+  peak_viewers: number;
+  avg_viewers: number;
+  total_chat_messages: number;
+  unique_chatters: number;
+  platforms: string[];
+  status: "live" | "ended";
+}
+
+export interface AnalyticsReport {
+  session_id: string;
+  summary: {
+    duration_seconds: number;
+    peak_viewers: number;
+    avg_viewers: number;
+    platforms: string[];
+    status: string;
+  };
+  engagement: {
+    total_chat_messages: number;
+    unique_chatters: number;
+    messages_per_minute: number;
+    top_chatters: Array<{ user: string; count: number }>;
+    polls_conducted: number;
+    assets_created: number;
+  };
+  timeline: Array<{
+    id: string;
+    session_id: string;
+    timestamp: number;
+    event_type: string;
+    payload: Record<string, unknown>;
+  }>;
+  generated_at: number;
+}
+
+export interface DashboardData {
+  live_session: BroadcastSession | null;
+  recent_sessions: BroadcastSession[];
+  totals: {
+    total_sessions: number;
+    total_messages: number;
+    total_duration_hours: number;
+    all_time_peak: number;
+  };
+}
+
+export interface LiveMetrics {
+  live: boolean;
+  session: BroadcastSession | null;
+}
+
+// ── Analytics API functions ─────────────────────────────────────────
+export async function listSessions(limit = 20, status?: string): Promise<BroadcastSession[]> {
+  const params = new URLSearchParams({ limit: String(limit) });
+  if (status) params.set("status", status);
+  const res = await fetch(`${API_BASE}/analytics/sessions?${params}`);
+  if (!res.ok) throw new Error(`Failed to list sessions: ${res.status}`);
+  return res.json();
+}
+
+export async function getSession(id: string): Promise<BroadcastSession> {
+  const res = await fetch(`${API_BASE}/analytics/sessions/${id}`);
+  if (!res.ok) throw new Error(`Failed to get session: ${res.status}`);
+  return res.json();
+}
+
+export async function getSessionReport(id: string): Promise<AnalyticsReport> {
+  const res = await fetch(`${API_BASE}/analytics/sessions/${id}/report`);
+  if (!res.ok) throw new Error(`Failed to get report: ${res.status}`);
+  return res.json();
+}
+
+export async function getSessionReportCsv(id: string): Promise<string> {
+  const res = await fetch(`${API_BASE}/analytics/sessions/${id}/report.csv`);
+  if (!res.ok) throw new Error(`Failed to get CSV: ${res.status}`);
+  return res.text();
+}
+
+export async function getLiveMetrics(): Promise<LiveMetrics> {
+  const res = await fetch(`${API_BASE}/analytics/live`);
+  if (!res.ok) throw new Error(`Failed to get live metrics: ${res.status}`);
+  return res.json();
+}
+
+export async function getDashboardData(): Promise<DashboardData> {
+  const res = await fetch(`${API_BASE}/analytics/dashboard`);
+  if (!res.ok) throw new Error(`Failed to get dashboard data: ${res.status}`);
+  return res.json();
+}

@@ -9,7 +9,6 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import PlainTextResponse
 
 from broadcast.analytics.agent import AnalyticsAgent
-from broadcast.analytics.models import BroadcastSession
 from broadcast.auth import verify_api_key
 
 logger = logging.getLogger(__name__)

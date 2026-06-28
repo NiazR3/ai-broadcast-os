@@ -8,6 +8,7 @@ import { ChatPanel } from "./components/ChatPanel";
 import { PollPanel } from "./components/PollPanel";
 import { ResearchPanel } from "./components/ResearchPanel";
 import { MediaPanel } from "./components/MediaPanel";
+import { AnalyticsPanel } from "./components/AnalyticsPanel";
 import { useWebSocket } from "./hooks/useWebSocket";
 
 function App() {
@@ -74,6 +75,11 @@ function App() {
         {/* Media assets */}
         <section className="bg-white rounded-lg shadow-sm p-6">
           <MediaPanel />
+        </section>
+
+        {/* Analytics */}
+        <section className="bg-white rounded-lg shadow-sm p-6">
+          <AnalyticsPanel />
         </section>
       </main>
     </div>
