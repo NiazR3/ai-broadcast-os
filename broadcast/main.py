@@ -4,6 +4,7 @@ from broadcast.config import Settings
 from broadcast.api.routes import router
 from broadcast.agents.router import router as agent_router
 from broadcast.audience.router import router as audience_router
+from broadcast.research.router import router as research_router
 from broadcast.middleware.rate_limit import RateLimitMiddleware
 from broadcast.middleware.security_headers import SecurityHeadersMiddleware
 
@@ -28,6 +29,7 @@ app.add_middleware(
 app.include_router(router)
 app.include_router(agent_router)
 app.include_router(audience_router)
+app.include_router(research_router)
 
 
 @app.get("/health")
