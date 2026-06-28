@@ -410,3 +410,90 @@ class TestReportGenerator:
         assert dash["live_session"] is None  # closed
         assert len(dash["recent_sessions"]) >= 1
         assert dash["totals"]["total_sessions"] == 1
+
+
+# ── API endpoint tests ─────────────────────────────────────────────
+
+_HEADERS = {"X-API-Key": "test-key"}
+
+
+class TestAnalyticsAPI:
+    @pytest.fixture(autouse=True)
+    def _reset_analytics(self, tmp_path):
+        """Replace module-level agent with a temp-db version for test isolation."""
+        from broadcast.analytics.agent import AnalyticsAgent
+        from broadcast.analytics.router import _replace_agent
+
+        db_path = str(tmp_path / "test_analytics_api.db")
+        test_agent = AnalyticsAgent(db_path=db_path)
+        test_agent.start()
+        _replace_agent(test_agent)
+        yield
+        test_agent.stop()
+
+    def test_list_sessions_empty(self, client):
+        resp = client.get("/analytics/sessions", headers=_HEADERS)
+        assert resp.status_code == 200
+        data = resp.json()
+        assert isinstance(data, list)
+
+    def test_get_session_not_found(self, client):
+        resp = client.get("/analytics/sessions/nonexistent", headers=_HEADERS)
+        assert resp.status_code == 404
+
+    def test_live_metrics_no_session(self, client):
+        resp = client.get("/analytics/live", headers=_HEADERS)
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["live"] is False
+
+    def test_dashboard_empty(self, client):
+        resp = client.get("/analytics/dashboard", headers=_HEADERS)
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["live_session"] is None
+
+    def test_create_and_get_report(self, client):
+        from broadcast.analytics.router import _agent as analytics_agent
+        from broadcast.analytics.models import MetricsSnapshot, AnalyticsEvent
+        from broadcast.analytics.session import SessionManager
+
+        sm = SessionManager(analytics_agent.db)
+        s = sm.create_session(platforms=["twitch"])
+        analytics_agent.db.insert_snapshot(MetricsSnapshot(
+            id=analytics_agent.db._next_id("m"), session_id=s.id,
+            timestamp=100.0, viewer_count=10,
+        ))
+        analytics_agent.db.insert_snapshot(MetricsSnapshot(
+            id=analytics_agent.db._next_id("m"), session_id=s.id,
+            timestamp=110.0, viewer_count=50,
+        ))
+        analytics_agent.db.insert_event(AnalyticsEvent(
+            id=analytics_agent.db._next_id("e"), session_id=s.id,
+            timestamp=100.0, event_type="audience.chat.message",
+            payload={"user": "alice"},
+        ))
+        sm.close_session(s.id)
+
+        resp = client.get(f"/analytics/sessions/{s.id}/report", headers=_HEADERS)
+        assert resp.status_code == 200
+        report = resp.json()
+        assert report["session_id"] == s.id
+        assert report["summary"]["peak_viewers"] == 50
+
+    def test_csv_endpoint(self, client):
+        from broadcast.analytics.router import _agent as analytics_agent
+        from broadcast.analytics.models import MetricsSnapshot
+        from broadcast.analytics.session import SessionManager
+
+        sm = SessionManager(analytics_agent.db)
+        s = sm.create_session()
+        analytics_agent.db.insert_snapshot(MetricsSnapshot(
+            id=analytics_agent.db._next_id("m"), session_id=s.id,
+            timestamp=100.0, viewer_count=10,
+        ))
+
+        resp = client.get(f"/analytics/sessions/{s.id}/report.csv", headers=_HEADERS)
+        assert resp.status_code == 200
+        assert resp.headers["content-type"].startswith("text/csv")
+        assert "viewer_count" in resp.text
