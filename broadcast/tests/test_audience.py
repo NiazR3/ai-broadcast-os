@@ -481,3 +481,59 @@ class TestModerationEngine:
         )
         result = engine.check(spam)
         assert result == ModerationAction.FLAG
+
+
+# ── AudienceAgent tests ────────────────────────────────────────────────
+
+class TestAudienceAgent:
+    @pytest.mark.asyncio
+    async def test_agent_initial_state(self):
+        from broadcast.audience.agent import AudienceAgent
+        agent = AudienceAgent()
+        assert agent.agent_name == "Audience"
+        assert agent.agent_type == "audience"
+        assert agent.running is False
+
+    @pytest.mark.asyncio
+    async def test_agent_start_stop_lifecycle(self):
+        from broadcast.audience.agent import AudienceAgent
+        agent = AudienceAgent()
+        agent.start()
+        assert agent.running is True
+        agent.stop()
+        assert agent.running is False
+
+    @pytest.mark.asyncio
+    async def test_get_recent_chat_returns_empty_initially(self):
+        from broadcast.audience.agent import AudienceAgent
+        agent = AudienceAgent()
+        msgs = agent.get_recent_chat()
+        assert msgs == []
+
+    @pytest.mark.asyncio
+    async def test_get_activity_summary(self):
+        from broadcast.audience.agent import AudienceAgent
+        agent = AudienceAgent()
+        summary = agent.get_activity_summary()
+        assert summary.total_messages == 0
+        assert summary.unique_users == 0
+
+    @pytest.mark.asyncio
+    async def test_simulation_toggle(self):
+        from broadcast.audience.agent import AudienceAgent
+        agent = AudienceAgent()
+        agent.start()
+        agent.start_simulation()
+        # Give it a moment to generate some messages
+        import asyncio
+        await asyncio.sleep(3.0)
+        msgs = agent.get_recent_chat()
+        assert len(msgs) > 0
+        agent.stop_simulation()
+        agent.stop()
+
+    @pytest.mark.asyncio
+    async def test_get_poll_results_none_initially(self):
+        from broadcast.audience.agent import AudienceAgent
+        agent = AudienceAgent()
+        assert agent.get_poll_results() is None
