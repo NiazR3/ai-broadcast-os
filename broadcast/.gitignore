@@ -28,3 +28,8 @@ docker-compose.override.yml
 
 # Logs
 *.log
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*

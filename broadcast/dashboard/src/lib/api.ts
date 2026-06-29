@@ -232,6 +232,23 @@ export async function removeCoHostPersona(): Promise<void> {
   if (!res.ok) throw new Error("Failed to remove co-host persona");
 }
 
+// Duplicate an existing persona
+export async function duplicatePersona(personaId: string): Promise<PersonaProfile> {
+  const persona = await getPersona(personaId);
+  // Generate a new ID and modify the name to indicate it's a copy
+  const duplicate: Partial<PersonaProfile> = {
+    name: `${persona.name} (Copy)`,
+    agent_type: persona.agent_type,
+    personality_traits: [...persona.personality_traits],
+    catchphrases: [...persona.catchphrases],
+    voice_style: persona.voice_style,
+    default_emotion: persona.default_emotion,
+    emotional_range: [...persona.emotional_range],
+    background_story: persona.background_story,
+  };
+  return createPersona(duplicate);
+}
+
 // ── Audience API types ────────────────────────────────────────────────
 export interface ChatMessage {
   id: string;

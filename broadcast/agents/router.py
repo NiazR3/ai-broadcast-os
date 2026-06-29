@@ -301,6 +301,16 @@ def delete_persona(persona_id: str) -> dict:
     return {"deleted": True, "persona_id": persona_id}
 
 
+@router.post("/personas/{persona_id}/duplicate", tags=["persona"])
+def duplicate_persona(persona_id: str) -> dict:
+    """Duplicate a persona profile."""
+    try:
+        duplicated = _persona_repo.duplicate_persona(persona_id)
+        return duplicated.model_dump()
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
 # ── Persona assignment endpoints ───────────────────────────────────
 
 @router.post("/host/persona/{persona_id}", tags=["persona"])

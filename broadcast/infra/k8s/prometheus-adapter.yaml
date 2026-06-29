@@ -1,0 +1,172 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: prometheus-adapter
+  namespace: monitoring
+  labels:
+    app: prometheus-adapter
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-adapter-config
+  namespace: monitoring
+data:
+  config.yaml: |
+    rules:
+    - seriesQuery: 'broadcast_viewer_count_total'
+      resources:
+        template: <<.Resource>>
+      name:
+        matches: "broadcast_viewer_count_total"
+        as: "broadcast_viewer_count_total"
+      metricsQuery: 'broadcast_viewer_count_total{<<.LabelMatchers>>}'
+    - seriesQuery: 'broadcast_transcoding_load'
+      resources:
+        template: <<.Resource>>
+      name:
+        matches: "broadcast_transcoding_load"
+        as: "broadcast_transcoding_load"
+      metricsQuery: 'broadcast_transcoding_load{<<.LabelMatchers>>}'
+    - seriesQuery: 'broadcast_research_queue_depth'
+      resources:
+        template: <<.Resource>>
+      name:
+        matches: "broadcast_research_queue_depth"
+        as: "broadcast_research_queue_depth"
+      metricsQuery: 'broadcast_research_queue_depth{<<.LabelMatchers>>}'
+    - seriesQuery: 'broadcast_chat_messages_per_second'
+      resources:
+        template: <<.Resource>>
+      name:
+        matches: "broadcast_chat_messages_per_second"
+        as: "broadcast_chat_messages_per_second"
+      metricsQuery: 'broadcast_chat_messages_per_second{<<.LabelMatchers>>}'
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: prometheus-adapter
+rules:
+- apiGroups: [""]
+  resources: ["services", "endpoints", "pods"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: [""]
+  resources: ["configmaps"]
+  verbs: ["get"]
+- nonResourceURLs: ["/metrics"]
+  verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: prometheus-adapter
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: prometheus-adapter
+subjects:
+- kind: ServiceAccount
+  name: prometheus-adapter
+  namespace: monitoring
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: prometheus-adapter
+  name: prometheus-adapter
+  namespace: monitoring
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: prometheus-adapter
+  template:
+    metadata:
+      labels:
+        app: prometheus-adapter
+    spec:
+      serviceAccountName: prometheus-adapter
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - prometheus-adapter
+              topologyKey: kubernetes.io/hostname
+      containers:
+      - name: prometheus-adapter
+        image: directxman12/k8s-prometheus-adapter-amd64:v0.10.0
+        args:
+          - "--log-level=info"
+          - "--prometheus-url=http://prometheus-operated.monitoring.svc:9090"
+          - "--metric-relabel-interval=30s"
+          - "--alsologtostderr"
+          - "--config=/etc/adapter/config.yaml"
+        ports:
+        - containerPort: 6443
+          name: tcp-http
+          protocol: TCP
+        resources:
+          limits:
+            cpu: 100m
+            memory: 128Mi
+          requests:
+            cpu: 50m
+            memory: 64Mi
+        volumeMounts:
+        - mountPath: /etc/adapter
+          name: config
+          readOnly: true
+        livenessProbe:
+          httpGet:
+            path: /metrics
+            port: 6443
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /metrics
+            port: 6443
+          initialDelaySeconds: 5
+          periodSeconds: 5
+      volumes:
+      - name: config
+        configMap:
+          name: prometheus-adapter-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: prometheus-adapter
+  namespace: monitoring
+  labels:
+    app: prometheus-adapter
+spec:
+  selector:
+    app: prometheus-adapter
+  ports:
+  - protocol: TCP
+    port: 443
+    targetPort: 6443
+  type: ClusterIP
+---
+apiVersion: apiregistration.k8s.io/v1
+kind: APIService
+metadata:
+  name: v1beta1.custom.metrics.k8s.io
+spec:
+  service:
+    name: prometheus-adapter
+    namespace: monitoring
+  group: custom.metrics.k8s.io
+  version: v1beta1
+  insecureSkipTLSVerify: true
+  groupPriorityMinimum: 100
+  versionPriority: 100
