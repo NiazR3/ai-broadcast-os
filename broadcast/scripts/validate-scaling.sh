@@ -18,6 +18,11 @@ if ! command -v kubectl &> /dev/null; then
     exit 1
 fi
 
+if ! command -v gcloud &> /dev/null; then
+    echo "Error: gcloud not found"
+    exit 1
+fi
+
 if ! kubectl get namespace "$NAMESPACE" &> /dev/null; then
     echo "Error: Namespace $NAMESPACE does not exist"
     exit 1
@@ -75,7 +80,8 @@ echo
 
 # Check node auto-provisioning
 echo "5. checking Node Auto-Provisioning..."
-CLUSTER_INFO=$(gcloud container clusters describe $(kubectl config current-context) --format=json 2>/dev/null || echo "{}")
+CLUSTER_NAME=$(kubectl config current-context | sed 's/.*\///')
+CLUSTER_INFO=$(gcloud container clusters describe $CLUSTER_NAME --format=json 2>/dev/null || echo "{}")
 if echo "$CLUSTER_INFO" | grep -q "\"autoprovisioningEnabled\": true"; then
     echo " Node Auto-Provisioning enabled"
 else

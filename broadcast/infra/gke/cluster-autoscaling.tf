@@ -31,7 +31,7 @@ variable "cluster_name" {
 }
 
 variable "initial_node_count" {
-  description = "Initial number of nodes per zone"
+  description = "Initial number of nodes for the default node pool"
   type        = number
   default     = 1
 }
@@ -64,7 +64,7 @@ resource "google_container_cluster" "primary" {
 
   # Enable binary authorization for container image validation
   binary_authorization {
-    evaluation_mode = "PROJECT_SINGLETON_POLICY_ENFORCE"
+    evaluation_mode = "PROJECT_SINGLE_POLICY_ENFORCE"
   }
 
   # Set minimum master version for stable GKE release channel
