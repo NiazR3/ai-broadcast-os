@@ -1,0 +1,43 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: broadcast-service-pdb
+  namespace: broadcast
+spec:
+  minAvailable: 80%  # Ensure at least 80% of replicas are available
+  selector:
+    matchLabels:
+      app: broadcast-service
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: media-agent-pdb
+  namespace: broadcast
+spec:
+  minAvailable: 70%
+  selector:
+    matchLabels:
+      app: media-agent
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: research-agent-pdb
+  namespace: broadcast
+spec:
+  minAvailable: 70%
+  selector:
+    matchLabels:
+      app: research-agent
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: audience-agent-pdb
+  namespace: broadcast
+spec:
+  minAvailable: 80%  # Higher availability for audience interaction
+  selector:
+    matchLabels:
+      app: audience-agent
