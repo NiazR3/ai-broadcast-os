@@ -1,0 +1,42 @@
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: broadcast-service-hpa
+  namespace: broadcast
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: broadcast-service
+  minReplicas: 2
+  maxReplicas: 100
+  metrics:
+  - type: External
+    external:
+      metric:
+        name: broadcast_viewer_count_total
+        selector:
+          matchLabels:
+            service: broadcast-service
+      target:
+        type: AverageValue
+        averageValue: "100"  # Target 100 viewers per pod
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 60
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 60  # Wait 1 minute before scaling up
+      policies:
+      - type: Pods
+        value: 4
+        periodSeconds: 60
+    scaleDown:
+      stabilizationWindowSeconds: 300  # Wait 5 minutes before scaling down
+      policies:
+      - type: Pods
+        value: 10
+        periodSeconds: 60
