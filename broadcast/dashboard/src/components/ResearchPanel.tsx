@@ -3,8 +3,8 @@ import {
   submitResearch,
   listResearchResults,
   extractTopics,
-  ResearchResult,
 } from "../lib/api";
+import type { ResearchResult } from "../lib/api";
 
 export function ResearchPanel() {
   const [query, setQuery] = useState("");
@@ -33,8 +33,8 @@ export function ResearchPanel() {
       await submitResearch(query.trim());
       setQuery("");
       await fetchResults();
-    } catch (err) {
-      console.error("Research failed:", err);
+    } catch {
+      // silently fail
     } finally {
       setLoading(false);
     }
@@ -44,7 +44,7 @@ export function ResearchPanel() {
     if (!query.trim()) return;
     try {
       const { topics } = await extractTopics(query.trim());
-      alert(`Detected topics: ${topics.join(", ") || "none"}`);
+      setQuery(`Topics: ${topics.join(", ") || "none"}`);
     } catch {
       // silently fail
     }

@@ -4,12 +4,8 @@ import {
   createTextOverlay,
   listAssets,
   deleteAsset,
-  assignAsset,
-  ChartConfig as ChartConfigType,
-  MediaAsset,
-  ChartType,
-  AssetType,
 } from "../lib/api";
+import type { ChartConfig, MediaAsset, ChartType } from "../lib/api";
 
 type Tab = "chart" | "text" | "gallery";
 
@@ -112,7 +108,7 @@ export function MediaPanel() {
     const valueList = seriesValues.split(",").map((s) => Number(s.trim())).filter((n) => !isNaN(n));
     if (labelList.length === 0 || valueList.length === 0) return;
 
-    const config: ChartConfigType = {
+    const config: ChartConfig = {
       chart_type: chartType,
       title: chartTitle,
       labels: labelList,
@@ -123,8 +119,8 @@ export function MediaPanel() {
       await createChart(config);
       setActiveTab("gallery");
       await fetchAssets();
-    } catch (err) {
-      console.error("Failed to create chart:", err);
+    } catch {
+      // silently fail
     }
   };
 
@@ -139,8 +135,8 @@ export function MediaPanel() {
       });
       setActiveTab("gallery");
       await fetchAssets();
-    } catch (err) {
-      console.error("Failed to create text overlay:", err);
+    } catch {
+      // silently fail
     }
   };
 
