@@ -59,7 +59,6 @@ spec:
           - "--prometheus-url=http://prometheus-operated.monitoring.svc:9090"
           - "--metric-relabel-interval=30s"
           - "--alsologtostderr"
-          - "--cm=ignored,cm=usage"
         ports:
         - containerPort: 6443
           name: tcp-http
