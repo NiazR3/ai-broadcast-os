@@ -66,6 +66,30 @@ resource "google_container_cluster" "primary" {
   binary_authorization {
     evaluation_mode = "PROJECT_SINGLETON_POLICY_ENFORCE"
   }
+
+  # Set minimum master version for stable GKE release channel
+  min_master_version = "1.29"
+
+  # Enable Node Auto-Provisioning (NAP) at the cluster level
+  cluster_autoscaling {
+    enabled = true
+    auto_provisioning_defaults {
+      oauth_scopes = ["https://www.googleapis.com/auth/cloud-platform"]
+      shielded_instance_config {
+        enable_secure_boot = true
+      }
+    }
+    resource_limits {
+      resource_type = "cpu"
+      minimum       = 1
+      maximum       = 100
+    }
+    resource_limits {
+      resource_type = "memory"
+      minimum       = 1
+      maximum       = 512
+    }
+  }
 }
 
 # Node Pool for system components (core DNS, metrics-server, etc.)
@@ -100,36 +124,6 @@ resource "google_container_node_pool" "primary_nodes" {
   autoscaling {
     min_node_count = 1
     max_node_count = 5
-  }
-}
-
-# Enable Node Auto-Provisioning (NAP) - this creates node pools automatically
-# based on pod resource requirements
-resource "google_container_node_pool" "autoprovisioned" {
-  name    = "${var.cluster_name}-nap"
-  cluster = google_container_cluster.primary.name
-  autoscaling {
-    min_node_count = 0
-    max_node_count = 100
-  }
-  management {
-    auto_repair  = true
-    auto_upgrade = true
-  }
-  node_config {
-    # NAP will override these defaults based on pod requirements
-    machine_type = "e2-standard-2"
-    disk_size_gb = 100
-    # Enable workload identity
-    workload_metadata_config {
-      mode = "GKE_METADATA"
-    }
-    shielded_instance_config {
-      enable_secure_boot = true
-    }
-    oauth_scopes = [
-      "https://www.googleapis.com/auth/cloud-platform",
-    ]
   }
 }
 
