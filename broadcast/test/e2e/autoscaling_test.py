@@ -2,7 +2,9 @@
 """
 End-to-end test for Broadcast M8 auto-scaling functionality.
 Tests that HPA and cluster autoscaling respond appropriately to load changes.
+Requires a live GKE cluster — excluded from `pytest` collection by default.
 """
+__test__ = False  # Prevent pytest collection — requires live GKE cluster
 import subprocess
 import sys
 import json

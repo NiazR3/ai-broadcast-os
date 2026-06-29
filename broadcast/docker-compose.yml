@@ -2,7 +2,9 @@ version: "3.9"
 
 services:
   broadcast:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile
     ports:
       - "8100:8100"
     env_file:
@@ -10,5 +12,6 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
-      - ./broadcast:/app/broadcast
+      # Mount host broadcast/ directory so source changes hot-reload
+      - .:/app/broadcast
     restart: unless-stopped

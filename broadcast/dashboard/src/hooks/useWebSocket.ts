@@ -4,7 +4,12 @@ import type { BroadcastEvent } from "../lib/api";
 const WS_BASE = import.meta.env.VITE_WS_BASE || "ws://localhost:8100";
 const RECONNECT_DELAY = 3000;
 
-export function useWebSocket() {
+interface UseWebSocketReturn {
+  events: BroadcastEvent[];
+  lastEvent: BroadcastEvent | null;
+}
+
+export function useWebSocket(): UseWebSocketReturn {
   const [events, setEvents] = useState<BroadcastEvent[]>([]);
   const wsRef = useRef<WebSocket | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);

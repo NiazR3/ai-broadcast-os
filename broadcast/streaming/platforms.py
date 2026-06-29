@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass, field
 from enum import Enum
+from time import time
 from typing import Optional
 
 
@@ -38,7 +39,6 @@ class BroadcastStatus:
     def uptime_seconds(self) -> int:
         if not self.start_time:
             return 0
-        from time import time
         return int(time() - self.start_time)
 
     @property

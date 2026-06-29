@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 import asyncio
+import logging
 from typing import AsyncIterator
+
+logger = logging.getLogger(__name__)
 
 
 class EventBus:
@@ -20,6 +23,10 @@ class EventBus:
             try:
                 queue.put_nowait(data)
             except asyncio.QueueFull:
+                logger.warning(
+                    "Subscriber queue full on channel '%s' (%d items) — removing subscriber",
+                    channel, queue.maxsize,
+                )
                 dead.append(queue)
         for q in dead:
             self._subscribers[channel].remove(q)

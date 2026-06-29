@@ -1,5 +1,42 @@
+# Python
 __pycache__
 *.pyc
+*.pyo
 .env
+.venv
+broadcast_data/
+
+# Tests
 tests/
+test/
+.pytest_cache
+
+# Git
 .git
+.gitignore
+
+# IDE / dev
+.superpowers
+.idea
+.vscode
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docs (not needed at runtime)
+docs/
+*.md
+
+# Infra (not needed at runtime)
+infra/
+scripts/
+
+# Frontend
+dashboard/node_modules
+dashboard/dist
+
+# Terraform
+**/.terraform*

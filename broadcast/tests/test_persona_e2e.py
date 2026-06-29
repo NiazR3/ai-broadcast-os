@@ -4,7 +4,7 @@ from broadcast.main import app
 
 def test_full_persona_workflow():
     client = TestClient(app)
-    
+
     # 1. Create persona
     resp = client.post("/agent/personas", json={
         "name": "Energetic Host",
@@ -19,7 +19,7 @@ def test_full_persona_workflow():
     assert resp.status_code == 200
     pid = resp.json()["id"]
     assert pid is not None
-    
+
     # 2. Assign to host
     resp = client.post(f"/agent/host/persona/{pid}")
     assert resp.status_code == 200
@@ -27,7 +27,7 @@ def test_full_persona_workflow():
     assert data["assigned"] is True
     assert data["persona_id"] == pid
     assert data["agent"] == "host"
-    
+
     # 3. Create episode + segment + generate dialogue
     ep = client.post("/agent/episode", json={"title": "Morning Show"}).json()
     client.post(f"/agent/episode/{ep['id']}/segment",
@@ -40,12 +40,12 @@ def test_full_persona_workflow():
     # Host dialogue should have emotion set
     assert data["host"]["lines"][0]["emotion"] is not None
     assert data["host"]["lines"][0]["emotion"] in ["excited", "curious"]
-    
+
     # 4. Unassign persona from host
     resp = client.delete("/agent/host/persona")
     assert resp.status_code == 200
     assert resp.json()["removed"] is True
-    
+
     # 5. Delete persona and verify cleanup
     resp = client.delete(f"/agent/personas/{pid}")
     assert resp.status_code == 200

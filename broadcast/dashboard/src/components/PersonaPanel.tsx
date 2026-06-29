@@ -1,4 +1,4 @@
-import { useState, useEffect, CallbackRef, DragEvent } from "react";
+import { useState, useEffect, DragEvent } from "react";
 import {
   listPersonas, deletePersona,
   assignHostPersona, removeHostPersona,
@@ -91,7 +91,7 @@ export function PersonaPanel() {
   const handleToggleSelect = (id: string) => {
     setSelectedIds(prev =>
       prev.includes(id)
-        ? prev.filter(id => id !== id)
+        ? prev.filter(x => x !== id)
         : [...prev, id]
     );
   };
@@ -129,10 +129,11 @@ export function PersonaPanel() {
     }
   };
 
-  const handleAssignAllToHost = async () => {
+  const handleAssignToHost = async () => {
     setError(null);
     try {
       // Assign all selected personas to host (one at a time)
+      // Note: backend only supports one host — last-selected persona becomes host
       for (const id of selectedIds) {
         await assignHostPersona(id);
       }
@@ -252,7 +253,7 @@ export function PersonaPanel() {
             {selectedIds.length} of {personas.length} selected
           </div>
           {selectedIds.length > 0 && (
-            <button onClick={handleAssignAllToHost}
+            <button onClick={handleAssignToHost}
               className="px-3 py-1.5 bg-indigo-600 text-white rounded text-sm hover:bg-indigo-700 disabled:opacity-50"
               disabled={selectedIds.length === 0}>
               Assign to All Hosts
@@ -277,6 +278,7 @@ export function PersonaPanel() {
           {personas.map((p, index) => (
             <div
               key={p.id}
+              draggable={true}
               className={`border rounded p-3 space-y-1 hover:border-gray-400 transition-colors cursor-grab
                 ${selectedIds.includes(p.id) ? "border-blue-300 bg-blue-50" : ""}
                 ${dragIndex === index ? "opacity-50" : ""}`}
@@ -288,9 +290,8 @@ export function PersonaPanel() {
                 <div className="flex items-start space-x-3">
                   <div className="flex-shrink-0">
                     <div className={`w-3 h-3 rounded-full
-                      ${hostPersonaId === p.id ? "bg-green-500" : ""}
-                      ${cohostPersonaId === p.id ? "bg-purple-500" : ""}
-                    `}" title={hostPersonaId === p.id ? "Host" : cohostPersonaId === p.id ? "Co-Host" : "Unassigned"}/>
+                      ${hostPersonaId === p.id ? "bg-green-500" : cohostPersonaId === p.id ? "bg-purple-500" : "bg-gray-400"}
+                    `} aria-label={hostPersonaId === p.id ? "Host" : cohostPersonaId === p.id ? "Co-Host" : "Unassigned"}/>
                   </div>
                   <div>
                     <p className="font-medium text-sm">{p.name}</p>

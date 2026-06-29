@@ -60,7 +60,7 @@ export function PersonaEditor({ persona, onSave, onCancel }: PersonaEditorProps)
       <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
         <div className="flex justify-between items-start mb-4">
           <h3 className="font-semibold text-lg">{persona ? "Edit Persona" : "New Persona"}</h3>
-          <button onClick={onCancel} className="text-gray-400 hover:text-gray-600">
+          <button onClick={onCancel} className="text-gray-400 hover:text-gray-600" aria-label="Close dialog">
             ✕
           </button>
         </div>

@@ -133,8 +133,8 @@ class Multiplexer:
         try:
             self._process = subprocess.Popen(
                 cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
             )
             self._status.active = True
             self._status.start_time = time()

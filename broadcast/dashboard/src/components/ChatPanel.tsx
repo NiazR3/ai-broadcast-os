@@ -119,18 +119,18 @@ export function ChatPanel() {
                 </div>
                 {!m.moderated && (
                   <button onClick={() => handleFlag(m.id)}
-                    className="text-[10px] text-red-500 hover:text-red-700 ml-2 flex-shrink-0">
+                    className="text-[10px] text-red-500 hover:text-red-700 ml-2 flex-shrink-0" aria-label="Flag message">
                     Flag
                   </button>
                 )}
                 {m.moderated && m.moderation_action === "flag" && (
                   <div className="flex gap-1 ml-2 flex-shrink-0">
                     <button onClick={() => handleModerate(m.id, "approve")}
-                      className="text-[10px] text-green-600 hover:text-green-800">Approve</button>
+                      className="text-[10px] text-green-600 hover:text-green-800" aria-label="Approve message">Approve</button>
                     <button onClick={() => handleModerate(m.id, "timeout")}
-                      className="text-[10px] text-orange-600 hover:text-orange-800">Timeout</button>
+                      className="text-[10px] text-orange-600 hover:text-orange-800" aria-label="Timeout user">Timeout</button>
                     <button onClick={() => handleModerate(m.id, "ban")}
-                      className="text-[10px] text-red-600 hover:text-red-800">Ban</button>
+                      className="text-[10px] text-red-600 hover:text-red-800" aria-label="Ban user">Ban</button>
                   </div>
                 )}
               </div>

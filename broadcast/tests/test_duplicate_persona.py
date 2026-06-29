@@ -1,5 +1,7 @@
 import os
 import tempfile
+
+import pytest
 from broadcast.agents.persona_repository import PersonaRepository
 from broadcast.agents.persona import PersonaProfile, VoiceStyle, AgentType
 
@@ -61,12 +63,8 @@ def test_duplicate_persona_nonexistent_id():
 
         try:
             # Try to duplicate a non-existent persona
-            try:
+            with pytest.raises(Exception, match="non-existent"):
                 repo.duplicate_persona("non-existent-id")
-                assert False, "Expected exception when duplicating non-existent persona"
-            except Exception:
-                # Expected to raise an exception
-                pass
         finally:
             repo.close()
 
