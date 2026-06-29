@@ -1,0 +1,42 @@
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: media-agent-hpa
+  namespace: broadcast
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: media-agent
+  minReplicas: 1
+  maxReplicas: 50
+  metrics:
+  - type: External
+    external:
+      metric:
+        name: broadcast_transcoding_load
+        selector:
+          matchLabels:
+            service: media-agent
+      target:
+        type: AverageValue
+        averageValue: "50"  # Target 50 transcoding jobs per pod
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 30
+      policies:
+      - type: Pods
+        value: 4
+        periodSeconds: 60
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+      - type: Pods
+        value: 10
+        periodSeconds: 60

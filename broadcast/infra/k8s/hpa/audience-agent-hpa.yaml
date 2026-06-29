@@ -1,0 +1,42 @@
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: audience-agent-hpa
+  namespace: broadcast
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: audience-agent
+  minReplicas: 2
+  maxReplicas: 40
+  metrics:
+  - type: External
+    external:
+      metric:
+        name: broadcast_chat_messages_per_second
+        selector:
+          matchLabels:
+            service: audience-agent
+      target:
+        type: AverageValue
+        averageValue: "100"  # Target 100 messages/second per pod
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 60
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 30
+      policies:
+      - type: Pods
+        value: 4
+        periodSeconds: 60
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+      - type: Pods
+        value: 10
+        periodSeconds: 60
