@@ -15,15 +15,37 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/analytics", tags=["analytics"], dependencies=[Depends(verify_api_key)])
 
-# Module-level singleton
-_agent = AnalyticsAgent()
-_agent.start()
+# Module-level singleton — defer start() to FastAPI lifespan so there's an event loop
+_agent: Optional[AnalyticsAgent] = None
+
+
+def get_agent() -> AnalyticsAgent:
+    """Get or create the singleton analytics agent."""
+    global _agent
+    if _agent is None:
+        _agent = AnalyticsAgent()
+    return _agent
+
+
+def start_agent() -> None:
+    """Start the analytics agent (call from FastAPI lifespan startup)."""
+    agent = get_agent()
+    agent.start()
+
+
+def stop_agent() -> None:
+    """Stop the analytics agent (call from FastAPI lifespan shutdown)."""
+    global _agent
+    if _agent is not None:
+        _agent.stop()
+        _agent = None
 
 
 def _replace_agent(agent: AnalyticsAgent) -> None:
     """Replace the module-level agent (used for test injection)."""
     global _agent
-    _agent.stop()
+    if _agent is not None:
+        _agent.stop()
     _agent = agent
 
 
@@ -33,13 +55,13 @@ def list_sessions(
     status: Optional[str] = None,
 ) -> list[dict]:
     """List broadcast sessions."""
-    return [s.model_dump() for s in _agent.session_manager.list_sessions(limit=limit, status=status)]
+    return [s.model_dump() for s in get_agent().session_manager.list_sessions(limit=limit, status=status)]
 
 
 @router.get("/sessions/{session_id}")
 def get_session(session_id: str) -> dict:
     """Get a single broadcast session."""
-    session = _agent.session_manager.get_session(session_id)
+    session = get_agent().session_manager.get_session(session_id)
     if session is None:
         raise HTTPException(status_code=404, detail="Session not found")
     return session.model_dump()
@@ -48,7 +70,7 @@ def get_session(session_id: str) -> dict:
 @router.get("/sessions/{session_id}/report")
 def get_session_report(session_id: str) -> dict:
     """Get post-stream analytics report."""
-    report = _agent.report_generator.build_report(session_id)
+    report = get_agent().report_generator.build_report(session_id)
     if report is None:
         raise HTTPException(status_code=404, detail="Session not found")
     return report.model_dump()
@@ -57,7 +79,7 @@ def get_session_report(session_id: str) -> dict:
 @router.get("/sessions/{session_id}/report.csv", response_class=PlainTextResponse)
 def get_session_report_csv(session_id: str) -> str:
     """Download metrics snapshots as CSV."""
-    csv_str = _agent.report_generator.build_csv(session_id)
+    csv_str = get_agent().report_generator.build_csv(session_id)
     if csv_str is None:
         raise HTTPException(status_code=404, detail="Session not found or no metrics data")
     return PlainTextResponse(
@@ -70,7 +92,7 @@ def get_session_report_csv(session_id: str) -> str:
 @router.get("/live")
 def get_live_metrics() -> dict:
     """Get current live session metrics."""
-    session = _agent.session_manager.get_active_session()
+    session = get_agent().session_manager.get_active_session()
     if session is None:
         return {"live": False, "session": None}
     return {
@@ -82,4 +104,4 @@ def get_live_metrics() -> dict:
 @router.get("/dashboard")
 def get_dashboard_data() -> dict:
     """Get aggregated dashboard overview data."""
-    return _agent.report_generator.build_dashboard()
+    return get_agent().report_generator.build_dashboard()

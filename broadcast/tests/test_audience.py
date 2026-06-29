@@ -523,11 +523,14 @@ class TestAudienceAgent:
         from broadcast.audience.agent import AudienceAgent
         agent = AudienceAgent()
         agent.start()
-        agent.start_simulation()
-        # Give it a moment to generate some messages
+        await agent.start_simulation(rate=2.0)  # Fast rate so messages arrive quickly
+        # Poll until messages arrive (up to 10s) instead of fixed sleep
         import asyncio
-        await asyncio.sleep(3.0)
-        msgs = agent.get_recent_chat()
+        for _ in range(20):
+            await asyncio.sleep(0.5)
+            msgs = agent.get_recent_chat()
+            if len(msgs) > 0:
+                break
         assert len(msgs) > 0
         agent.stop_simulation()
         agent.stop()

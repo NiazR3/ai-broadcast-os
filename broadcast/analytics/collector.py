@@ -40,7 +40,9 @@ class MetricsCollector:
         self._running = False
         self._chat_count: int = 0
         self._chat_window_start: float = 0.0
-        self._task: Optional[asyncio.Task] = None
+        self._broadcast_task: Optional[asyncio.Task] = None
+        self._audience_task: Optional[asyncio.Task] = None
+        self._snapshot_task: Optional[asyncio.Task] = None
         self._current_session_id: Optional[str] = None
         self._message_counts: dict[str, int] = {}  # user → count
 
@@ -49,7 +51,7 @@ class MetricsCollector:
         return self._running
 
     def start(self) -> None:
-        """Start listening for events."""
+        """Start listening for events. Must be called from an async context."""
         if self._running:
             return
         self._running = True
@@ -58,35 +60,43 @@ class MetricsCollector:
         try:
             loop = asyncio.get_running_loop()
         except RuntimeError:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
+            logger.warning(
+                "MetricsCollector: no running event loop — deferred; "
+                "call start() from an async context or use FastAPI lifespan"
+            )
+            return
 
-        self._task = loop.create_task(self._run())
+        self._broadcast_task = loop.create_task(self._consume("broadcast"))
+        self._audience_task = loop.create_task(self._consume("audience.chat"))
+        self._snapshot_task = loop.create_task(self._snapshot_loop())
         logger.info("MetricsCollector started")
 
     def stop(self) -> None:
         """Stop listening for events."""
         self._running = False
-        if self._task:
-            self._task.cancel()
-            self._task = None
+        for t in (self._broadcast_task, self._audience_task, self._snapshot_task):
+            if t:
+                t.cancel()
+        self._broadcast_task = None
+        self._audience_task = None
+        self._snapshot_task = None
         logger.info("MetricsCollector stopped")
 
     def _reset_chat_window(self) -> None:
         self._chat_count = 0
         self._chat_window_start = time()
 
-    async def _run(self) -> None:
-        """Main loop: subscribe to EventBus channels."""
+    async def _consume(self, channel: str) -> None:
+        """Consume events from a single EventBus channel."""
         try:
-            async for event in self._event_bus.subscribe("broadcast"):
+            async for event in self._event_bus.subscribe(channel):
                 if not self._running:
                     break
                 self._handle_broadcast_event(event)
         except asyncio.CancelledError:
             pass
         except Exception:
-            logger.exception("MetricsCollector error")
+            logger.exception("MetricsCollector consumer error on '%s'", channel)
 
     def _handle_broadcast_event(self, event: dict) -> None:
         """Route a broadcast event to the appropriate handler."""

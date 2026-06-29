@@ -1,3 +1,5 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from broadcast.config import Settings
@@ -7,11 +9,22 @@ from broadcast.audience.router import router as audience_router
 from broadcast.research.router import router as research_router
 from broadcast.media.router import router as media_router
 from broadcast.analytics.router import router as analytics_router
+from broadcast.analytics.router import start_agent, stop_agent
 from broadcast.middleware.rate_limit import RateLimitMiddleware
 from broadcast.middleware.security_headers import SecurityHeadersMiddleware
 
 settings = Settings()
-app = FastAPI(title=settings.service_name, version=settings.version)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Start analytics agent on boot, stop on shutdown."""
+    start_agent()
+    yield
+    stop_agent()
+
+
+app = FastAPI(title=settings.service_name, version=settings.version, lifespan=lifespan)
 
 # -- Security middleware (applied to all responses) ---------------------------
 app.add_middleware(SecurityHeadersMiddleware)

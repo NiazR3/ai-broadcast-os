@@ -192,14 +192,14 @@ def get_audience_stats() -> dict:
 # ── Simulation control (convenience for dashboard) ────────────────────
 
 @router.post("/simulation/start")
-def start_simulation(rate: float = Query(default=0.33, ge=0.1, le=10.0)) -> dict:
+async def start_simulation(rate: float = Query(default=0.33, ge=0.1, le=10.0)) -> dict:
     """Start mock chat simulation."""
-    _agent.start_simulation(rate=rate)
+    await _agent.start_simulation(rate=rate)
     return {"running": True, "rate": rate}
 
 
 @router.post("/simulation/stop")
-def stop_simulation() -> dict:
+async def stop_simulation() -> dict:
     """Stop mock chat simulation."""
     _agent.stop_simulation()
     return {"running": False}

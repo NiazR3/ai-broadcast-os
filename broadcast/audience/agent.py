@@ -146,7 +146,7 @@ class AudienceAgent(BaseAgent):
 
     # ── Simulation ──────────────────────────────────────────────────
 
-    def start_simulation(self, rate: float = 0.33) -> None:
+    async def start_simulation(self, rate: float = 0.33) -> None:
         """Start mock chat simulation."""
         if self._simulation is not None:
             logger.warning("Simulation already running")
@@ -155,21 +155,17 @@ class AudienceAgent(BaseAgent):
         bridge.start()
         self._simulation = bridge
 
-        async def _run_simulation():
-            try:
-                async for msg in bridge.subscribe():
-                    self.ingest_message(msg)
-            except Exception:
-                logger.exception("Simulation error")
-
-        try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-
-        self._simulation_task = loop.create_task(_run_simulation())
+        loop = asyncio.get_running_loop()
+        self._simulation_task = loop.create_task(self._run_simulation())
         logger.info("Chat simulation started at %.2f msg/s", rate)
+
+    async def _run_simulation(self) -> None:
+        """Consume simulated chat messages and ingest them."""
+        try:
+            async for msg in self._simulation.subscribe():
+                self.ingest_message(msg)
+        except Exception:
+            logger.exception("Simulation error")
 
     def stop_simulation(self) -> None:
         """Stop mock chat simulation."""
