@@ -3,7 +3,6 @@
 End-to-end test for Broadcast M8 auto-scaling functionality.
 Tests that HPA and cluster autoscaling respond appropriately to load changes.
 """
-import time
 import subprocess
 import sys
 import json
@@ -31,7 +30,7 @@ def get_hpa_status(namespace: str, hpa_name: str) -> Tuple[int, int, int]:
         data = json.loads(out)
         spec = data.get("spec", {})
         status = data.get("status", {})
-        ready = spec.get("replicas", 0)
+        ready = spec.get("minReplicas", 0)
         desired = status.get("desiredReplicas", 0)
         current = status.get("currentReplicas", 0)
         return ready, desired, current

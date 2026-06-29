@@ -75,7 +75,7 @@ echo
 
 # Check node auto-provisioning
 echo "5. checking Node Auto-Provisioning..."
-CLUSTER_INFO=$(gcloud container clusters describe $(kubectl config current-context) --formatjson 2>/dev/null || echo "{}")
+CLUSTER_INFO=$(gcloud container clusters describe $(kubectl config current-context) --format=json 2>/dev/null || echo "{}")
 if echo "$CLUSTER_INFO" | grep -q "\"autoprovisioningEnabled\": true"; then
     echo " Node Auto-Provisioning enabled"
 else
@@ -90,5 +90,5 @@ echo "=== Validation Complete ==="
 echo "Next steps:"
 echo "1. Apply any failing configurations"
 echo "2. Run load tests to verify scaling behavior"
-echo "3. Monitor with: kubectl get hpa -w -n $namespace"
+echo "3. Monitor with: kubectl get hpa -w -n $NAMESPACE"
 echo "4. Check node pool activity: kubectl get nodes --show-labels -w"
