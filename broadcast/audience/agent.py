@@ -121,28 +121,20 @@ class AudienceAgent(BaseAgent):
             message.moderation_action = action.value
         self._chat_repo.add(message)
         # Publish to EventBus
+        event = {
+            "type": "audience.chat.message",
+            "message_id": message.id,
+            "user": message.user.display_name,
+            "text": message.text[:100],
+            "platform": message.platform.value,
+            "moderated": message.moderated,
+            "timestamp": message.timestamp,
+        }
         try:
             loop = asyncio.get_running_loop()
+            loop.create_task(self._event_bus.publish("audience.chat", event))
         except RuntimeError:
-            asyncio.run(self._event_bus.publish("audience.chat", {
-                "type": "audience.chat.message",
-                "message_id": message.id,
-                "user": message.user.display_name,
-                "text": message.text[:100],
-                "platform": message.platform.value,
-                "moderated": message.moderated,
-                "timestamp": message.timestamp,
-            }))
-        else:
-            loop.create_task(self._event_bus.publish("audience.chat", {
-                "type": "audience.chat.message",
-                "message_id": message.id,
-                "user": message.user.display_name,
-                "text": message.text[:100],
-                "platform": message.platform.value,
-                "moderated": message.moderated,
-                "timestamp": message.timestamp,
-            }))
+            asyncio.run(self._event_bus.publish("audience.chat", event))
 
     # ── Simulation ──────────────────────────────────────────────────
 

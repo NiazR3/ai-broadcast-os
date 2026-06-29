@@ -5,3 +5,4 @@ pydantic-settings>=2.5.0
 obs-websocket-py>=0.3.0
 python-dotenv>=1.0.0
 websockets>=12.0
+prometheus-client>=0.21.0

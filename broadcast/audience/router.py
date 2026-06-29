@@ -74,16 +74,12 @@ def flag_message(message_id: str) -> dict:
     success = _agent.chat_repo.update_moderation(message_id, ModerationAction.FLAG.value)
     if not success:
         raise HTTPException(status_code=404, detail="Message not found")
-    # Publish flag event
-    try:
-        loop = asyncio.get_running_loop()
-        loop.create_task(_agent._event_bus.publish("audience.moderation", {
-            "type": "audience.moderation.flagged",
-            "message_id": message_id,
-            "timestamp": time(),
-        }))
-    except RuntimeError:
-        pass
+    # Publish flag event (sync endpoint — use asyncio.run)
+    asyncio.run(_agent._event_bus.publish("audience.moderation", {
+        "type": "audience.moderation.flagged",
+        "message_id": message_id,
+        "timestamp": time(),
+    }))
     return {"flagged": True, "message_id": message_id}
 
 

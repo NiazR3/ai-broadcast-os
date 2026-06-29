@@ -11,6 +11,15 @@ from broadcast.analytics.database import AnalyticsDatabase
 from broadcast.analytics.models import AnalyticsEvent, MetricsSnapshot
 from broadcast.analytics.session import SessionManager
 from broadcast.events.bus import EventBus
+from broadcast.monitoring.metrics import (
+    analytics_chat_messages_total,
+    analytics_collector_up,
+    analytics_events_total,
+    analytics_snapshots_total,
+    broadcast_duration_seconds,
+    broadcast_sessions_active,
+    broadcast_sessions_total,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -69,6 +78,7 @@ class MetricsCollector:
         self._broadcast_task = loop.create_task(self._consume("broadcast"))
         self._audience_task = loop.create_task(self._consume("audience.chat"))
         self._snapshot_task = loop.create_task(self._snapshot_loop())
+        analytics_collector_up.set(1)
         logger.info("MetricsCollector started")
 
     def stop(self) -> None:
@@ -80,6 +90,7 @@ class MetricsCollector:
         self._broadcast_task = None
         self._audience_task = None
         self._snapshot_task = None
+        analytics_collector_up.set(0)
         logger.info("MetricsCollector stopped")
 
     def _reset_chat_window(self) -> None:
@@ -116,6 +127,9 @@ class MetricsCollector:
         elif event_type == "media.asset.created":
             self._log_event(event_type, event)
 
+        # Track every event that reached this handler
+        analytics_events_total.labels(event_type=event_type).inc()
+
     def _on_broadcast_started(self, event: dict) -> None:
         """Handle broadcast start."""
         platforms = event.get("platforms", [])
@@ -123,15 +137,20 @@ class MetricsCollector:
         self._current_session_id = session.id
         self._reset_chat_window()
         self._message_counts = {}
+        broadcast_sessions_total.inc()
+        broadcast_sessions_active.set(1)
         logger.info("Broadcast started, session=%s", session.id)
 
     def _on_broadcast_stopped(self) -> None:
         """Handle broadcast stop."""
         session_id = self._current_session_id
         if session_id:
-            self._session_manager.close_session(session_id)
+            closed = self._session_manager.close_session(session_id)
             self._take_snapshot(final=True)
             self._current_session_id = None
+            if closed:
+                broadcast_duration_seconds.observe(closed.duration_seconds)
+        broadcast_sessions_active.set(0)
         logger.info("Broadcast stopped, session=%s closed", session_id)
 
     def _on_platform_event(self, event: dict) -> None:
@@ -146,6 +165,7 @@ class MetricsCollector:
     def _on_chat_event(self, event: dict) -> None:
         """Handle chat message events."""
         self._chat_count += 1
+        analytics_chat_messages_total.inc()
         user = event.get("user", "anonymous")
         self._message_counts[user] = self._message_counts.get(user, 0) + 1
 
@@ -199,6 +219,7 @@ class MetricsCollector:
             platform="all",
         )
         self._db.insert_snapshot(snapshot)
+        analytics_snapshots_total.inc()
 
         if final:
             self._reset_chat_window()

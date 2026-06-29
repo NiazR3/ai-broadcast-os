@@ -12,6 +12,10 @@ from broadcast.analytics.router import router as analytics_router
 from broadcast.analytics.router import start_agent, stop_agent
 from broadcast.middleware.rate_limit import RateLimitMiddleware
 from broadcast.middleware.security_headers import SecurityHeadersMiddleware
+from broadcast.monitoring.metrics import (
+    PrometheusMiddleware,
+    metrics_asgi_app,
+)
 
 settings = Settings()
 
@@ -29,6 +33,9 @@ app = FastAPI(title=settings.service_name, version=settings.version, lifespan=li
 # -- Security middleware (applied to all responses) ---------------------------
 app.add_middleware(SecurityHeadersMiddleware)
 
+# -- HTTP request metrics (applied before rate-limit to count all requests) ---
+app.add_middleware(PrometheusMiddleware)
+
 # -- Rate limiting (applied to /broadcast/* routes) ---------------------------
 app.add_middleware(RateLimitMiddleware, default_limit=120, post_limit=30, window_seconds=60)
 
@@ -40,6 +47,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# -- Prometheus /metrics endpoint (no auth required for scraping) -------------
+app.mount("/metrics", metrics_asgi_app, name="metrics")
 
 app.include_router(router)
 app.include_router(agent_router)
