@@ -40,9 +40,12 @@ app.add_middleware(PrometheusMiddleware)
 app.add_middleware(RateLimitMiddleware, default_limit=120, post_limit=30, window_seconds=60)
 
 # -- CORS --------------------------------------------------------------------
+# In production, set BROADCAST_CORS_ORIGINS to a comma-separated list of allowed origins.
+# In dev, defaults to localhost:5173 (Vite dev server).
+_cors_origins = settings.cors_origins if settings.cors_origins else ["http://localhost:5173"]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=_cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

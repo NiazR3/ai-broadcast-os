@@ -32,6 +32,10 @@ class Settings(BaseSettings):
     # Authentication
     api_key: str = ""  # BROADCAST_API_KEY env var; empty = no auth (dev mode)
 
+    # CORS origins -- comma-separated list of allowed origins for production
+    # e.g. "https://app.broadcast.dev,https://broadcast.vercel.app"
+    cors_origins: list[str] = []
+
     # WebSocket origin validation -- comma-separated list of allowed origins
     # e.g. "http://localhost:5173,http://localhost:8100"
     websocket_allowed_origins: list[str] = ["http://localhost:5173"]

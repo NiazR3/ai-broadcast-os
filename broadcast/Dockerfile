@@ -21,7 +21,9 @@ RUN if [ -f /app/broadcast/requirements.txt ]; then \
         mv /app/broadcast/requirements.txt /app/; \
     fi
 
-RUN chown -R broadcast:broadcast /app
+# Ensure broadcast_data directory exists for persistent storage
+RUN mkdir -p /app/broadcast/broadcast_data && \
+    chown -R broadcast:broadcast /app
 
 ENV PYTHONPATH=/app
 

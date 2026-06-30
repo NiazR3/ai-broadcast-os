@@ -1,0 +1,40 @@
+name: Frontend Deploy
+
+on:
+  push:
+    branches: [master, main]
+    paths:
+      - "dashboard/**"
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    name: Deploy Dashboard to Vercel
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: dashboard/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+        working-directory: dashboard
+
+      - name: Lint
+        run: npm run lint
+        working-directory: dashboard
+        continue-on-error: true
+
+      - name: Deploy to Vercel
+        uses: amondnet/vercel-action@v25
+        with:
+          vercel-token: ${{ secrets.VERCEL_TOKEN }}
+          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
+          vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
+          vercel-args: "--prod"
+          working-directory: ./dashboard
