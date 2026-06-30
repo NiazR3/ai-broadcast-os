@@ -1,16 +1,16 @@
-# Broadcast OS — Hybrid Deployment Guide (Fly.io + Vercel)
+# Broadcast OS — Hybrid Deployment Guide
 
-Deploy the AI Broadcast OS stack with the **backend on Fly.io** (free $5/mo credit)
-and the **frontend on Vercel** (free tier).
+Deploy the AI Broadcast OS stack with the frontend on **Vercel** (free tier) and the
+backend on a **Linux VPS** (starting at ~$5/mo).
 
 ```
-Vercel (CDN)                  Fly.io (global)
-  ┌─────────────┐             ┌───────────────┐
-  │ React       │  API calls  │ broadcast-os  │
-  │ Dashboard   │──────────→  │ FastAPI:8100  │
-  │ app.dev ◄───│←── CORS ──│  FFmpeg/OBS   │
-  └─────────────┘   HTTPS     │ Volume: data  │
-                              └───────────────┘
+┌───────────────┐       ┌──────────────────────┐
+│  Vercel (CDN) │──────→│  VPS (Docker)        │
+│               │  API  │                      │
+│  React        │  calls│  nginx → FastAPI:8100 │
+│  Dashboard    │       │  FFmpeg (OBS)        │
+│  app.dev ◄────│←──────│  api.dev             │
+└───────────────┘  CORS └──────────────────────┘
 ```
 
 ---
@@ -20,179 +20,192 @@ Vercel (CDN)                  Fly.io (global)
 | Item | Details |
 |---|---|
 | **GitHub repo** | `github.com/NiazR3/ai-broadcast-os` |
-| **Fly.io account** | [fly.io/signup](https://fly.io/signup) — card required for ID verify, **never charged on free tier** |
-| **Vercel account** | [vercel.com/signup](https://vercel.com/signup) — connect GitHub |
-| **Domain** (optional) | A custom domain for production |
+| **VPS** | Ubuntu 22.04+, 1 CPU / 1 GB RAM minimum, public IP |
+| **Domain** | Two DNS A records pointing to your VPS IP |
+| **Vercel account** | Free tier — connect your GitHub |
+| **Stream keys** | Twitch / YouTube / Facebook ingest |
 
 ---
 
-## 2. Backend — Fly.io
+## 2. Frontend — Vercel
 
-### 2.1 Install Fly CLI
+### 2.1 One-click deploy
+
+1. Go to [vercel.com/new](https://vercel.com/new)
+2. Import your GitHub repo (`NiazR3/ai-broadcast-os`)
+3. Set **Root Directory** to `dashboard`
+4. Add environment variable:
+   - `VITE_API_BASE` = `https://api.yourdomain.com` (your backend domain)
+5. Deploy
+
+Vercel auto-detects Vite and runs `npm run build`. Every push to `master`
+that changes `dashboard/` triggers a new deployment.
+
+### 2.2 Custom domain
+
+After the initial deploy, go to **Project Settings → Domains** and add
+`app.yourdomain.com`. Vercel provisions a free SSL certificate automatically.
+
+### 2.3 Manual deploy (CLI)
 
 ```bash
-# Windows (PowerShell)
-powershell -Command "iwr https://fly.io/install.ps1 -useb | iex"
-
-# macOS/Linux
-curl -fsSL https://fly.io/install.sh | sh
+cd dashboard
+npm ci
+VITE_API_BASE=https://api.yourdomain.com npm run build
+npx vercel --prod
 ```
 
-### 2.2 Launch the app
+---
+
+## 3. Backend — VPS
+
+### 3.1 Initial setup
+
+SSH into your VPS and run:
 
 ```bash
-# Log in
-fly auth login
+# Install Docker + dependencies
+curl -fsSL https://get.docker.com | sh
+sudo usermod -aG docker "$USER"
+# Log out and back in, then:
 
-# Create the app (one time only)
-cd broadcast
-fly launch --ha=false --no-deploy
+# Clone the repo
+sudo mkdir -p /opt/broadcast/data
+sudo chown "$USER:$(id -gn)" /opt/broadcast
+git clone https://github.com/NiazR3/ai-broadcast-os.git /opt/broadcast/app
+cd /opt/broadcast/app
 
-# Set app name to match fly.toml
-fly apps create broadcast-os
+# Configure environment
+cp .env.production.example .env.production
+# Edit .env.production with your secrets (see below)
 ```
 
-### 2.3 Create persistent volume
+### 3.2 Environment configuration
+
+Edit `.env.production`:
 
 ```bash
-fly volumes create broadcast_data --region iad --size 1
-```
-
-### 2.4 Set secrets
-
-```bash
-# Generate and set the API key
-fly secrets set BROADCAST_API_KEY=$(openssl rand -hex 32)
+# Required — generate a strong key
+BROADCAST_API_KEY=$(openssl rand -hex 32)
 
 # Allow your Vercel domain
-fly secrets set BROADCAST_CORS_ORIGINS=https://app.yourdomain.com
-fly secrets set BROADCAST_WEBSOCKET_ALLOWED_ORIGINS=https://app.yourdomain.com
+BROADCAST_CORS_ORIGINS=https://app.yourdomain.com
+BROADCAST_WEBSOCKET_ALLOWED_ORIGINS=https://app.yourdomain.com
 
-# OBS WebSocket (set password in OBS first)
-fly secrets set BROADCAST_OBS_PASSWORD=your-obs-password
-
-# Stream keys (can also be set via dashboard after deploy)
-fly secrets set BROADCAST_TWITCH_STREAM_KEY=
-fly secrets set BROADCAST_YOUTUBE_STREAM_KEY=
-fly secrets set BROADCAST_FACEBOOK_STREAM_KEY=
+# OBS — set password in OBS WebSocket settings first
+BROADCAST_OBS_PASSWORD=your-obs-websocket-password
 ```
 
-### 2.5 Deploy
+### 3.3 Start services
 
 ```bash
-fly deploy
+docker compose -f docker-compose.prod.yml up -d
 ```
 
-Wait for it to finish, then verify:
+Verify:
 
 ```bash
-curl https://broadcast-os.fly.dev/health
+curl http://localhost:8100/health
 # {"status":"ok","service":"ai-broadcast-os","version":"0.1.0"}
 ```
 
-Fly.io issues a free `*.fly.dev` subdomain with auto-SSL. You can add a custom
-domain later: `fly certs create api.yourdomain.com`
+### 3.4 SSL (Let's Encrypt)
 
----
+```bash
+# Install certbot on the host
+sudo apt-get install -y certbot
 
-## 3. Frontend — Vercel
+# Get certificate
+sudo certbot certonly --standalone -d api.yourdomain.com
 
-### 3.1 Deploy
+# Copy certs to nginx SSL directory
+sudo mkdir -p /opt/broadcast/app/nginx/ssl
+sudo cp /etc/letsencrypt/live/api.yourdomain.com/fullchain.pem \
+       /opt/broadcast/app/nginx/ssl/
+sudo cp /etc/letsencrypt/live/api.yourdomain.com/privkey.pem \
+       /opt/broadcast/app/nginx/ssl/
 
-1. Go to [vercel.com/new](https://vercel.com/new)
-2. **Import** your GitHub repo (`NiazR3/ai-broadcast-os`)
-3. **Root Directory** — set to `dashboard`
-4. Framework auto-detects Vite
-5. **Environment Variables**:
-   - `VITE_API_BASE` = `https://broadcast-os.fly.dev` (your Fly.io app URL)
-6. **Deploy**
+# Restart nginx
+docker compose -f docker-compose.prod.yml restart nginx
+```
 
-### 3.2 Custom domain (optional)
+> **Auto-renewal:** Add a cron job: `0 3 * * 1 certbot renew --deploy-hook "docker compose -f /opt/broadcast/app/docker-compose.prod.yml restart nginx"`
 
-Project Settings → Domains → add `app.yourdomain.com`
+After SSL, uncomment the HTTPS server block in `nginx/nginx.conf` and update `server_name`.
 
 ---
 
 ## 4. CI/CD
 
+The GitHub Actions workflows handle automated deployment:
+
 ### Backend (`backend.yml`)
 
-On push to `master` (excluding dashboard/docs):
-1. **Test** — Python test suite
-2. **Deploy** — `flyctl deploy` to Fly.io
+Triggered on pushes to `master` that don't touch `dashboard/` or docs:
 
-**Required secret** (repo → Settings → Secrets and variables → Actions):
+1. **Test** — run Python test suite
+2. **Build & Push** — build Docker image → push to GHCR
+3. **Deploy** — SSH into VPS, pull new image, restart service
+
+**Secrets required** (set in GitHub repo → Settings → Secrets and variables → Actions):
 
 | Secret | Value |
 |---|---|
-| `FLY_API_TOKEN` | From Fly.io: `fly tokens create deploy` |
-| `BROADCAST_API_KEY` | Same as set on Fly |
-| `BROADCAST_CORS_ORIGINS` | e.g. `https://app.yourdomain.com` |
-| `BROADCAST_WEBSOCKET_ALLOWED_ORIGINS` | Same as CORS |
-| `BROADCAST_OBS_PASSWORD` | OBS WebSocket password |
+| `VPS_HOST` | Your VPS IP address |
+| `VPS_USER` | SSH username (e.g. `root` or `ubuntu`) |
+| `VPS_SSH_KEY` | Private SSH key (deploy key) |
+| `BROADCAST_API_KEY` | API key for production (same as `.env.production`) |
 
 ### Frontend (`frontend.yml`)
 
-On push changing `dashboard/`:
-1. **Lint**
-2. **Deploy to Vercel**
-
-**Required secrets:**
+Triggered on pushes changing `dashboard/`:
 
 | Secret | Value |
 |---|---|
-| `VERCEL_TOKEN` | Vercel → Settings → Tokens → Create |
-| `VERCEL_ORG_ID` | Vercel → Settings → General → Team ID |
-| `VERCEL_PROJECT_ID` | From your Vercel project → Settings → Project ID |
+| `VERCEL_TOKEN` | Vercel account token (vercel.com → Settings → Tokens) |
+| `VERCEL_ORG_ID` | Vercel org ID (vercel.com → Settings → General) |
+| `VERCEL_PROJECT_ID` | Vercel project ID (from project settings) |
 
 ---
 
 ## 5. Post-deploy checklist
 
-- [ ] `curl https://broadcast-os.fly.dev/health` returns 200
-- [ ] Frontend loads at `https://<vercel-app>.vercel.app`
-- [ ] Dashboard shows connected to API (no CORS errors in console)
-- [ ] Prometheus `/metrics` accessible
-- [ ] CI/CD can deploy (trigger a push or manual workflow run)
+- [ ] `/health` returns 200 from your VPS
+- [ ] SSL certificate valid (`curl https://api.yourdomain.com/health`)
+- [ ] Frontend loads at `https://app.yourdomain.com`
+- [ ] Dashboard talks to API (check browser console for CORS errors)
+- [ ] Set stream keys in the dashboard **Platform Settings**
+- [ ] OBS WebSocket connection works (backend → OBS)
+- [ ] Prometheus `/metrics` accessible (if needed)
+- [ ] CI/CD workflows can deploy successfully
 
 ---
 
-## 6. Free tier limits
-
-| Resource | Fly.io Free Allowance | Broadcast OS Usage |
-|---|---|---|
-| **RAM** | 256 MB per shared VM (3 VMs) | ~150-200 MB (FastAPI + FFmpeg) |
-| **CPU** | Shared, up to 1 vCPU burst | Light ~5-10% idle |
-| **Storage** | 3 GB persistent volume | SQLite DB + logs (<100 MB) |
-| **Bandwidth** | 160 GB outbound / mo | RTMP streaming outbound |
-| **SSL** | Automatic | Included |
-
-> **If you need more RAM for high-bitrate streaming:** resize the machine with
-> `fly machine update <id> --memory 1024` (~$6/mo).
-
----
-
-## 7. Troubleshooting
+## 6. Troubleshooting
 
 | Symptom | Likely fix |
 |---|---|
-| Dashboard blank / CORS errors | Make sure `VITE_API_BASE` in Vercel matches your Fly.io app URL exactly |
-| `curl /health` fails | Run `fly logs` to check startup errors |
-| OBS not connecting | Ensure OBS WebSocket plugin is installed and password matches `BROADCAST_OBS_PASSWORD` |
-| Stream not starting | Set stream keys via dashboard or `fly secrets set BROADCAST_TWITCH_STREAM_KEY=...` |
-| Volume not mounting | Run `fly volumes list` to verify volume exists; re-create if missing |
+| Dashboard blank / CORS errors | Check `BROADCAST_CORS_ORIGINS` includes your Vercel domain exactly |
+| `502 Bad Gateway` from nginx | Backend container not healthy — check `docker compose logs broadcast` |
+| OBS not connecting | Ensure OBS WebSocket plugin is installed, password matches, and `BROADCAST_OBS_HOST` is correct |
+| Stream not starting | Verify stream keys are set — check API: `GET /broadcast/status` |
+| `stream_key` values empty | Set via dashboard or API: `POST /broadcast/config` with `{"twitch_stream_key": "live_..."}` |
 
 ---
 
-## 8. Local development with Fly
+## 7. Architecture reference
 
-```bash
-# Test the Docker build locally
-docker build -t broadcast-os .
-
-# Run with environment file
-docker run --rm -p 8100:8100 --env-file .env broadcast-os
-
-# Or use the dev compose file
-docker compose up
 ```
+VPS (:80/:443)
+ └── nginx (reverse proxy)
+      ├── /api/*     → broadcast:8100 (FastAPI backend)
+      ├── /ws/*      → broadcast:8100 (WebSocket, upgraded)
+      ├── /health    → broadcast:8100
+      └── /*         → /usr/share/nginx/html (static SPA)
+
+Vercel (CDN)
+ └── React SPA → calls https://api.yourdomain.com/api/*
+```
+
+The backend container stores persistent data (analytics, personas) in a Docker
+volume mounted at `broadcast_data/`.
