@@ -18,6 +18,15 @@ export interface BroadcastEvent {
   scene?: string;
   platform?: string;
   error?: string;
+  /** Show-runner segment events */
+  segment_id?: string;
+  segment_type?: string;
+  /** Current show run state */
+  state?: string;
+  /** Show episode title */
+  title?: string;
+  /** Agent dialogue content */
+  content?: string;
 }
 
 export async function getStatus(): Promise<BroadcastStatus> {

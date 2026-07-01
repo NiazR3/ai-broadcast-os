@@ -165,7 +165,7 @@ export function ShowRunnerPanel() {
   const handleSeek = async (segmentId: string) => {
     setError(null);
     try {
-      const result = await seekSegment(segmentId);
+      await seekSegment(segmentId);
       setRunLog((prev) => [...prev, `Sought to segment: ${segmentId}`]);
       await getRunState().then(setRunState);
     } catch (err: unknown) {

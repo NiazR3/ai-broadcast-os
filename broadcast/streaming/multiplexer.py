@@ -37,6 +37,7 @@ class Multiplexer:
                         error="Stream key not configured",
                     )
                     continue
+                validate_stream_key(key)  # Validate before building URL
                 url = build_rtmp_url(plat, key)
                 self._status.platforms[platform_name] = PlatformStatus(
                     platform=plat,
@@ -101,7 +102,7 @@ class Multiplexer:
 
     def start_broadcast(self) -> None:
         """Start the broadcast — spawns FFmpeg to multiplex to all configured platforms."""
-        if self._status.active:
+        if self.status.active:  # Use property to detect crashed FFmpeg
             logger.warning("Broadcast already active")
             return
 

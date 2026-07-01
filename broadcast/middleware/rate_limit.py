@@ -1,8 +1,12 @@
 """Simple in-memory rate limiter using a sliding window per IP address.
 
 Provides a single RateLimitMiddleware class that can be added to a FastAPI
-application via ``app.add_middleware()``.  Stricter limits are applied to
+application via ``app.add_middleware()``. Stricter limits are applied to
 POST endpoints (state-changing operations) than to read-only GET requests.
+
+The rate limiter is active only when ``BROADCAST_API_KEY`` is configured
+(production mode). In development mode (no API key set) rate limiting is
+skipped, consistent with the auth bypass in ``auth.py``.
 """
 
 from __future__ import annotations
@@ -13,6 +17,8 @@ from collections import defaultdict
 from fastapi import Request
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.responses import JSONResponse, Response
+
+from broadcast.config import Settings
 
 
 class RateLimitMiddleware(BaseHTTPMiddleware):
@@ -47,18 +53,29 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         # Adding --workers N creates N independent rate-limit states,
         # making the effective limit N * configured_limit per IP.
         self._requests: dict[str, list[float]] = defaultdict(list)
+        # Skip rate limiting in dev mode (consistent with auth.py)
+        settings = Settings()
+        self._enabled = bool(settings.api_key)
 
     async def dispatch(
         self, request: Request, call_next: RequestResponseEndpoint
     ) -> Response:
-        # Only rate-limit broadcast routes
-        if not request.url.path.startswith("/broadcast"):
+        # Skip entirely in dev mode
+        if not self._enabled:
+            return await call_next(request)
+
+        # Only rate-limit API routes
+        if not request.url.path.startswith("/api/"):
             return await call_next(request)
 
         # Determine limit based on HTTP method
         limit = self.post_limit if request.method == "POST" else self.default_limit
 
-        client_ip = request.client.host if request.client else "unknown"
+        # Resolve client IP from proxy-forwarded header; fall back to direct connection
+        forwarded = request.headers.get("X-Forwarded-For", "")
+        client_ip = forwarded.split(",")[0].strip() if forwarded else (
+            request.client.host if request.client else "unknown"
+        )
         now = time.time()
         window_start = now - self.window_seconds
 

@@ -273,7 +273,7 @@ class ShowRunnerAgent(BaseAgent):
         if not topic:
             return {"error": "Topic is required", "state": self._state.value}
 
-        if self._state not in (ShowState.IDLE, ShowState.COMPLETED):
+        if self._state not in (ShowState.IDLE, ShowState.COMPLETED, ShowState.FAILED):
             return {
                 "error": f"ShowRunner is in state '{self._state.value}'. Reset the runner first.",
                 "state": self._state.value,
@@ -569,9 +569,9 @@ class ShowRunnerAgent(BaseAgent):
         if not episode.segments:
             return {"error": "Episode has no segments", "state": self._state.value}
 
-        self._state = ShowState.RUNNING
         episode.status = ScriptStatus.BROADCASTING
         self._director.load_script(episode)
+        self._state = ShowState.RUNNING  # Set after load_script succeeds
         self._run_log = ["Interactive run prepared"]
         self._segment_results = []
         self._obs_ready = False
@@ -726,6 +726,8 @@ class ShowRunnerAgent(BaseAgent):
             "host_dialogue": seg_dialogue.get("host", {}).get("lines", []),
             "cohost_dialogue": seg_dialogue.get("cohost", {}).get("lines", []),
         }
+        self._segment_results.append(seg_result)
+        self._run_log.append(f"Sought to segment: {segment_id}")
 
         return {
             "segment": seg_result,
@@ -737,12 +739,19 @@ class ShowRunnerAgent(BaseAgent):
         """Mark the interactive run as completed.
 
         Returns the full run summary with all segment results.
+        Warns if not all segments were played (call abort_run() to abort instead).
         """
         if self._state != ShowState.RUNNING:
             return {
                 "error": f"Show must be in 'running' state, currently '{self._state.value}'",
                 "state": self._state.value,
             }
+
+        remaining = self._director.has_more if self._director else False
+        if remaining:
+            logger.warning(
+                "Completing run with remaining segments. Use abort_run() to abort instead."
+            )
 
         if self._current_episode:
             self._current_episode.status = ScriptStatus.COMPLETED
@@ -760,6 +769,7 @@ class ShowRunnerAgent(BaseAgent):
             "total_segments": len(self._segment_results),
             "segment_results": self._segment_results,
             "run_log": self._run_log,
+            "remaining": remaining,
         }
 
     def abort_run(self) -> dict:
@@ -776,7 +786,7 @@ class ShowRunnerAgent(BaseAgent):
         self._state = ShowState.FAILED
         self._error = "Run aborted by user"
         if self._current_episode:
-            self._current_episode.status = ScriptStatus.COMPLETED
+            self._current_episode.status = ScriptStatus.FAILED
 
         publish_event(
             self._event_bus, "broadcast", "show.failed",

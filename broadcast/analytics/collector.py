@@ -144,7 +144,6 @@ class MetricsCollector:
         session = self._session_manager.create_session(platforms=platforms)
         self._current_session_id = session.id
         self._reset_chat_window()
-        self._current_session_id = None  # Clear eagerly — always, even on failure
         broadcast_sessions_total.inc()
         broadcast_sessions_active.set(1)
         logger.info("Broadcast started, session=%s", session.id)
@@ -152,11 +151,11 @@ class MetricsCollector:
     def _on_broadcast_stopped(self) -> None:
         """Handle broadcast stop."""
         session_id = self._current_session_id
-        self._current_session_id = None  # Clear eagerly — always, even on failure
         if session_id:
             try:
                 closed = self._session_manager.close_session(session_id)
                 self._take_snapshot(final=True)
+                self._current_session_id = None  # Clear after final snapshot
                 if closed:
                     broadcast_duration_seconds.observe(closed.duration_seconds)
             except Exception:

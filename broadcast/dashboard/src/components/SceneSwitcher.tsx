@@ -120,37 +120,6 @@ function getSourceTypeBadge(type: string): { color: string; label: string } {
   return { color: "badge--default", label };
 }
 
-/* ── Scene Icon (by index) ────────────────────────────────────────── */
-
-const SCENE_ICONS = [
-  "M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z",             // home
-  "M22 12h-4l-3 9L9 3l-3 9H2",                                      // zappy
-  "M12 2L2 7l10 5 10-5-10-5z M2 17l10 5 10-5 M2 12l10 5 10-5",    // layers
-  "M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z",               // map-pin
-  "M6 9H4.5a2.5 2.5 0 0 1 0-5C7 4 6 9 6 9z M18 9h1.5a2.5 2.5 0 0 0 0-5C17 4 18 9 18 9z M4 22h16 M10 22l1-9 M14 22l-1-9", // cloud
-  "M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z",                  // shield
-];
-
-function SceneIcon({ index }: { index: number }) {
-  const d = SCENE_ICONS[index % SCENE_ICONS.length];
-  return (
-    <svg
-      width="24"
-      height="24"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.5"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className="opacity-30"
-      aria-hidden="true"
-    >
-      <path d={d} />
-    </svg>
-  );
-}
-
 /* ── Component ────────────────────────────────────────────────────── */
 
 export function SceneSwitcher() {
@@ -393,8 +362,6 @@ export function SceneSwitcher() {
     const sources = sceneSources[scene];
     const loadingSources = sourcesLoading[scene];
     const hasError = sourcesError[scene];
-
-    const badgeInfo = getSourceTypeBadge("");
 
     return (
       <div

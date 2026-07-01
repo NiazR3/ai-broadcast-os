@@ -17,6 +17,16 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def _log_task_failure(task: asyncio.Task) -> None:
+    """Log any unhandled exception from an async event-publish task."""
+    try:
+        exc = task.exception()
+        if exc:
+            logger.error("Event publish task failed: %s", exc, exc_info=exc)
+    except asyncio.CancelledError:
+        pass
+
+
 def publish_event(event_bus: EventBus, channel: str, event_type: str, **extra) -> None:
     """Publish an event asynchronously via the EventBus.
 
@@ -40,4 +50,5 @@ def publish_event(event_bus: EventBus, channel: str, event_type: str, **extra) -
     except RuntimeError:
         asyncio.run(event_bus.publish(channel, payload))
     else:
-        loop.create_task(event_bus.publish(channel, payload))
+        task = loop.create_task(event_bus.publish(channel, payload))
+        task.add_done_callback(_log_task_failure)

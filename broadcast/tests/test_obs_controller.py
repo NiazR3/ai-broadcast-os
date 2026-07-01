@@ -106,7 +106,8 @@ async def test_set_source_visibility():
         controller._connected = True
         result = await controller.set_source_visibility("Webcam", True)
         assert result is True
-        assert mock_instance.call.call_count == 3
+        # 4 calls: get_current_scene (x2 for TOCTOU guard) + GetSceneItemId + SetSceneItemEnabled
+        assert mock_instance.call.call_count == 4
 
 
 def test_disconnect_when_not_connected():

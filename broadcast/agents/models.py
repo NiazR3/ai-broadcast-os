@@ -31,6 +31,7 @@ class ScriptStatus(str, Enum):
     READY = "ready"
     BROADCASTING = "broadcasting"
     COMPLETED = "completed"
+    FAILED = "failed"
 
 
 class DialogueLine(BaseModel):

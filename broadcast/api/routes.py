@@ -55,11 +55,14 @@ def _build_platform_responses(status) -> dict[str, PlatformConfigResponse]:
 
 def _publish_event(event_type: str, **extra) -> None:
     """Publish a broadcast event asynchronously."""
-    asyncio.create_task(_event_bus.publish("broadcast", {
+    from broadcast.events.publish import _log_task_failure
+
+    task = asyncio.create_task(_event_bus.publish("broadcast", {
         "type": event_type,
         "timestamp": time(),
         **extra,
     }))
+    task.add_done_callback(_log_task_failure)
 
 
 @router.get("/status", response_model=BroadcastStatusResponse)
@@ -77,7 +80,7 @@ def get_status():
 async def start_broadcast():
     """Start broadcasting to all configured platforms."""
     _mux.start_broadcast()
-    _publish_event("broadcast.started")
+    _publish_event("broadcast.started", platforms=list(_mux.status.platforms.keys()))
     return get_status()
 
 
