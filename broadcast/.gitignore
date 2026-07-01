@@ -9,6 +9,7 @@ build/
 .eggs/
 *.egg
 .Python
+.venv/
 env/
 venv/
 .env
@@ -29,6 +30,7 @@ docker-compose.override.yml
 
 # Logs
 *.log
+.coverage
 
 # Terraform
 .terraform/
