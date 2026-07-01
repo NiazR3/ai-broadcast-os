@@ -487,3 +487,281 @@ class TestShowRunnerAPI:
         resp = self.client.get("/api/agent/show-runner/status")
         assert resp.json()["state"] == "idle"
         assert resp.json()["episode"] is None
+
+
+# ── Interactive run control tests ───────────────────────────────────────
+
+
+class TestInteractiveRunControl:
+    """Tests for prepare_run, next_segment, seek_to_segment, complete_run, abort_run."""
+
+    def test_prepare_returns_initial_state(self, runner: ShowRunnerAgent) -> None:
+        runner.produce_show("Interactive Test", "technology")
+        result = runner.prepare_run()
+        assert result["state"] == "running"
+        assert "episode_id" in result
+        assert result["total_segments"] == 6
+        assert result["has_more"] is True
+
+    def test_prepare_with_wrong_episode_id(self, runner: ShowRunnerAgent) -> None:
+        runner.produce_show("Interactive Test")
+        result = runner.prepare_run(episode_id="nonexistent")
+        assert "error" in result
+
+    def test_prepare_without_produce(self, runner: ShowRunnerAgent) -> None:
+        result = runner.prepare_run()
+        assert "error" in result
+
+    @pytest.mark.asyncio
+    async def test_next_segment_returns_segment(self, runner: ShowRunnerAgent) -> None:
+        runner.produce_show("Interactive Segments", "technology")
+        runner.prepare_run()
+        result = await runner.next_segment()
+        assert "segment" in result
+        assert result["segment"]["segment_type"] == "intro"
+        assert result["segment_index"] == 0
+        assert result["has_more"] is True
+
+    @pytest.mark.asyncio
+    async def test_next_segment_progresses(self, runner: ShowRunnerAgent) -> None:
+        runner.produce_show("Progress", "technology")
+        runner.prepare_run()
+        seg1 = await runner.next_segment()
+        assert seg1["segment_index"] == 0
+        seg2 = await runner.next_segment()
+        assert seg2["segment_index"] == 1
+        assert seg2["segment"]["segment_type"] != "intro"
+
+    @pytest.mark.asyncio
+    async def test_next_segment_past_end(self, runner: ShowRunnerAgent) -> None:
+        runner.produce_show("Past End", "technology")
+        runner.prepare_run()
+        for _ in range(6):
+            await runner.next_segment()
+        result = await runner.next_segment()
+        assert "error" in result
+
+    @pytest.mark.asyncio
+    async def test_next_segment_without_prepare(self, runner: ShowRunnerAgent) -> None:
+        result = await runner.next_segment()
+        assert "error" in result
+
+    @pytest.mark.asyncio
+    async def test_next_segment_with_dialogue(self, runner: ShowRunnerAgent) -> None:
+        runner.produce_show("Dialogue Check", "technology")
+        runner.prepare_run()
+        result = await runner.next_segment()
+        seg = result["segment"]
+        assert len(seg["host_dialogue"]) > 0
+        assert len(seg["cohost_dialogue"]) > 0
+
+    @pytest.mark.asyncio
+    async def test_seek_to_named_segment(self, runner: ShowRunnerAgent) -> None:
+        runner.produce_show("Seek Test", "technology")
+        runner.prepare_run()
+        result = await runner.seek_to_segment("guest")
+        assert result["segment"]["segment_id"] == "guest"
+        assert result["segment"]["order"] == 2
+        # guest is at index 2, so 3 segments remain (ad, content_2, outro)
+        assert result["has_more"] is True
+
+    @pytest.mark.asyncio
+    async def test_seek_to_content_2(self, runner: ShowRunnerAgent) -> None:
+        runner.produce_show("Seek Content", "technology")
+        runner.prepare_run()
+        result = await runner.seek_to_segment("content_2")
+        assert result["segment"]["segment_type"] == "content"
+        assert result["segment"]["segment_id"] == "content_2"
+
+    @pytest.mark.asyncio
+    async def test_seek_to_last_segment(self, runner: ShowRunnerAgent) -> None:
+        runner.produce_show("Last Seek", "technology")
+        runner.prepare_run()
+        result = await runner.seek_to_segment("outro")
+        assert result["segment"]["segment_id"] == "outro"
+        assert result["has_more"] is False  # last segment
+
+    @pytest.mark.asyncio
+    async def test_seek_nonexistent(self, runner: ShowRunnerAgent) -> None:
+        runner.produce_show("Seek Fail", "technology")
+        runner.prepare_run()
+        result = await runner.seek_to_segment("nonexistent")
+        assert "error" in result
+
+    @pytest.mark.asyncio
+    async def test_seek_without_prepare(self, runner: ShowRunnerAgent) -> None:
+        result = await runner.seek_to_segment("guest")
+        assert "error" in result
+
+    def test_complete_run_returns_summary(self, runner: ShowRunnerAgent) -> None:
+        runner.produce_show("Complete Test", "technology")
+        runner.prepare_run()
+        result = runner.complete_run()
+        assert result["state"] == "completed"
+        assert "episode_id" in result
+
+    def test_complete_with_partial_progress(self, runner: ShowRunnerAgent) -> None:
+        runner.produce_show("Partial Progress", "technology")
+        runner.prepare_run()
+        result = runner.complete_run()
+        assert result["state"] == "completed"
+        assert result["total_segments"] == 0  # no segments played
+
+    def test_complete_without_prepare(self, runner: ShowRunnerAgent) -> None:
+        result = runner.complete_run()
+        assert "error" in result
+
+    def test_abort_run_marks_failed(self, runner: ShowRunnerAgent) -> None:
+        runner.produce_show("Abort Test", "technology")
+        runner.prepare_run()
+        result = runner.abort_run()
+        assert result["state"] == "failed"
+        assert result["error"] == "Run aborted by user"
+
+    def test_abort_without_prepare(self, runner: ShowRunnerAgent) -> None:
+        result = runner.abort_run()
+        assert "error" in result
+
+    def test_abort_returns_partial_result(self, runner: ShowRunnerAgent) -> None:
+        runner.produce_show("Partial Abort", "technology")
+        runner.prepare_run()
+        result = runner.abort_run()
+        assert "partial_segments" in result
+
+    def test_get_run_state_before_prepare(self, runner: ShowRunnerAgent) -> None:
+        runner.produce_show("State Test", "technology")
+        state = runner.get_run_state()
+        assert state["state"] == "ready"  # still in ready, not running
+
+    def test_get_run_state_during_run(self, runner: ShowRunnerAgent) -> None:
+        runner.produce_show("Active State", "technology")
+        runner.prepare_run()
+        state = runner.get_run_state()
+        assert state["state"] == "running"
+        assert state["segments_played"] == 0
+        assert state["has_more"] is True
+
+    def test_get_run_state_total_segments(self, runner: ShowRunnerAgent) -> None:
+        runner.produce_show("Count Check", "technology")
+        runner.prepare_run()
+        state = runner.get_run_state()
+        assert state["total_segments"] == 6
+
+    def test_reset_clears_run_state(self, runner: ShowRunnerAgent) -> None:
+        runner.produce_show("Clear Run", "technology")
+        runner.prepare_run()
+        runner.reset()
+        state = runner.get_run_state()
+        assert state["state"] == "idle"
+        assert state["segments_played"] == 0
+
+    def test_cannot_prepare_twice(self, runner: ShowRunnerAgent) -> None:
+        runner.produce_show("Double Prepare", "technology")
+        runner.prepare_run()
+        result = runner.prepare_run()
+        assert "error" in result  # already in running state
+
+
+# ── Interactive run control API tests ───────────────────────────────────
+
+
+class TestInteractiveRunAPI:
+    """Test the interactive run endpoints through FastAPI TestClient."""
+
+    @pytest.fixture(autouse=True)
+    def _setup(self, client):
+        self.client = client
+        from broadcast.agents.router import _show_runner
+        _show_runner.reset()
+
+    def test_prepare_endpoint(self) -> None:
+        self.client.post(
+            "/api/agent/show-runner/produce",
+            json={"topic": "Interactive API", "category": "technology"},
+        )
+        resp = self.client.post("/api/agent/show-runner/prepare", json={})
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["state"] == "running"
+        assert data["total_segments"] == 6
+
+    def test_prepare_without_produce_returns_400(self) -> None:
+        resp = self.client.post("/api/agent/show-runner/prepare", json={})
+        assert resp.status_code == 400
+
+    def test_connect_obs_endpoint(self) -> None:
+        self.client.post(
+            "/api/agent/show-runner/produce",
+            json={"topic": "OBS Connect Test", "category": "technology"},
+        )
+        self.client.post("/api/agent/show-runner/prepare", json={})
+        resp = self.client.post("/api/agent/show-runner/connect-obs")
+        # OBS not available in tests, but should return valid dict
+        assert resp.status_code == 200
+        assert "obs_connected" in resp.json()
+
+    def test_next_segment_endpoint(self) -> None:
+        self.client.post(
+            "/api/agent/show-runner/produce",
+            json={"topic": "Next Segment", "category": "technology"},
+        )
+        self.client.post("/api/agent/show-runner/prepare", json={})
+        resp = self.client.post("/api/agent/show-runner/next-segment")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "segment" in data
+        assert data["segment_index"] == 0
+
+    def test_next_segment_without_prepare_returns_400(self) -> None:
+        resp = self.client.post("/api/agent/show-runner/next-segment")
+        assert resp.status_code == 400
+
+    def test_seek_endpoint(self) -> None:
+        self.client.post(
+            "/api/agent/show-runner/produce",
+            json={"topic": "Seek API", "category": "technology"},
+        )
+        self.client.post("/api/agent/show-runner/prepare", json={})
+        resp = self.client.post("/api/agent/show-runner/seek/guest")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["segment"]["segment_id"] == "guest"
+
+    def test_seek_nonexistent_returns_404(self) -> None:
+        self.client.post(
+            "/api/agent/show-runner/produce",
+            json={"topic": "Seek Fail", "category": "technology"},
+        )
+        self.client.post("/api/agent/show-runner/prepare", json={})
+        resp = self.client.post("/api/agent/show-runner/seek/nonexistent")
+        assert resp.status_code == 404
+
+    def test_complete_endpoint(self) -> None:
+        self.client.post(
+            "/api/agent/show-runner/produce",
+            json={"topic": "Complete API", "category": "technology"},
+        )
+        self.client.post("/api/agent/show-runner/prepare", json={})
+        resp = self.client.post("/api/agent/show-runner/complete")
+        assert resp.status_code == 200
+        assert resp.json()["state"] == "completed"
+
+    def test_abort_endpoint(self) -> None:
+        self.client.post(
+            "/api/agent/show-runner/produce",
+            json={"topic": "Abort API", "category": "technology"},
+        )
+        self.client.post("/api/agent/show-runner/prepare", json={})
+        resp = self.client.post("/api/agent/show-runner/abort")
+        assert resp.status_code == 200
+        assert resp.json()["state"] == "failed"
+
+    def test_run_state_endpoint(self) -> None:
+        self.client.post(
+            "/api/agent/show-runner/produce",
+            json={"topic": "State API", "category": "technology"},
+        )
+        self.client.post("/api/agent/show-runner/prepare", json={})
+        resp = self.client.get("/api/agent/show-runner/run-state")
+        assert resp.status_code == 200
+        assert resp.json()["state"] == "running"

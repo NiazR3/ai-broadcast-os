@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 import logging
-import subprocess
+import subprocess  # nosec - required for FFmpeg process management; no shell=True, inputs validated
 from time import time
 from typing import Optional
 from broadcast.streaming.platforms import (
@@ -131,7 +131,7 @@ class Multiplexer:
 
         logger.info("Starting broadcast with FFmpeg tee to %d platforms", len(ready_platforms))
         try:
-            self._process = subprocess.Popen(
+            self._process = subprocess.Popen(  # nosec - cmd is a list (no shell=True), inputs validated
                 cmd,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,

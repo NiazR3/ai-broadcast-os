@@ -6,7 +6,7 @@ class Settings(BaseSettings):
 
     service_name: str = "ai-broadcast-os"
     version: str = "0.1.0"
-    host: str = "0.0.0.0"
+    host: str = "0.0.0.0"  # nosec - required for Docker container; override via BROADCAST_HOST env
     port: int = 8100
 
     # OBS WebSocket
@@ -15,9 +15,9 @@ class Settings(BaseSettings):
     obs_password: str = ""
 
     # RTMP ingest
-    rtmp_ingest_host: str = "0.0.0.0"
+    rtmp_ingest_host: str = "0.0.0.0"  # nosec - required for RTMP ingest; override via BROADCAST_RTMP_INGEST_HOST
     rtmp_ingest_port: int = 1935
-    rtmp_output_dir: str = "/tmp/broadcast"
+    rtmp_output_dir: str = "/tmp/broadcast"  # nosec - temporary directory for RTMP segments inside Docker
 
     # Platform stream keys (user-configured via API)
     twitch_stream_key: str = ""

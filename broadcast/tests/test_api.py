@@ -28,9 +28,9 @@ def _configure_platform(platform_name: str, stream_key: str) -> None:
 # ---------------------------------------------------------------------------
 
 def test_get_broadcast_status():
-    """GET /broadcast/status returns active flag and platform dict."""
+    """GET /api/broadcast/status returns active flag and platform dict."""
     client = TestClient(app)
-    resp = client.get("/broadcast/status")
+    resp = client.get("/api/broadcast/status")
     assert resp.status_code == 200
     data = resp.json()
     assert "active" in data
@@ -38,9 +38,9 @@ def test_get_broadcast_status():
 
 
 def test_get_scenes_when_obs_not_connected():
-    """GET /broadcast/scenes returns 503 when OBS is disconnected."""
+    """GET /api/broadcast/scenes returns 503 when OBS is disconnected."""
     client = TestClient(app)
-    resp = client.get("/broadcast/scenes")
+    resp = client.get("/api/broadcast/scenes")
     assert resp.status_code == 503
     data = resp.json()
     assert "detail" in data
@@ -59,28 +59,28 @@ def test_broadcast_start_stop_cycle(mock_popen):
     client = TestClient(app)
 
     # Start broadcast
-    start_resp = client.post("/broadcast/start")
+    start_resp = client.post("/api/broadcast/start")
     assert start_resp.status_code == 200
     assert start_resp.json()["active"] is True
 
     # Status shows active
-    status_resp = client.get("/broadcast/status")
+    status_resp = client.get("/api/broadcast/status")
     assert status_resp.json()["active"] is True
 
     # Stop broadcast
-    stop_resp = client.post("/broadcast/stop")
+    stop_resp = client.post("/api/broadcast/stop")
     assert stop_resp.status_code == 200
     assert stop_resp.json()["active"] is False
 
     # Status reflects inactive
-    final_resp = client.get("/broadcast/status")
+    final_resp = client.get("/api/broadcast/status")
     assert final_resp.json()["active"] is False
 
 
 def test_get_platforms():
-    """GET /broadcast/platforms returns all configured platforms."""
+    """GET /api/broadcast/platforms returns all configured platforms."""
     client = TestClient(app)
-    resp = client.get("/broadcast/platforms")
+    resp = client.get("/api/broadcast/platforms")
     assert resp.status_code == 200
     platforms = resp.json()
     assert "twitch" in platforms
@@ -89,10 +89,10 @@ def test_get_platforms():
 
 
 def test_update_platforms_validates():
-    """POST /broadcast/platforms updates and validates stream keys."""
+    """POST /api/broadcast/platforms updates and validates stream keys."""
     client = TestClient(app)
     resp = client.post(
-        "/broadcast/platforms",
+        "/api/broadcast/platforms",
         json={
             "twitch": "new_key_123",
             "youtube": "",
@@ -115,22 +115,21 @@ def test_websocket_endpoint(mock_popen):
     _configure_platform("twitch", "live_12345")
 
     client = TestClient(app)
-    with client.websocket_connect("/broadcast/ws") as ws:
-        client.post("/broadcast/start")
+    with client.websocket_connect("/api/broadcast/ws") as ws:
+        client.post("/api/broadcast/start")
         data = ws.receive_json()
         assert data["type"] == "broadcast.started"
 
     # Clean up: stop broadcast so next test gets a clean state
-    client.post("/broadcast/stop")
+    client.post("/api/broadcast/stop")
 
 
-def test_duplicate_persona_endpoint():
+def test_duplicate_persona_endpoint(client):
     """Test duplicating a persona via the API endpoint."""
-    client = TestClient(app)
 
     # First create a persona to duplicate
     create_resp = client.post(
-        "/agent/personas",
+        "/api/agent/personas",
         json={
             "name": "Original Person",
             "agent_type": "host",
@@ -147,7 +146,7 @@ def test_duplicate_persona_endpoint():
     original_id = original_persona["id"]
 
     # Duplicate the persona
-    duplicate_resp = client.post(f"/agent/personas/{original_id}/duplicate")
+    duplicate_resp = client.post(f"/api/agent/personas/{original_id}/duplicate")
     assert duplicate_resp.status_code == 200
     duplicated_persona = duplicate_resp.json()
 
@@ -163,13 +162,13 @@ def test_duplicate_persona_endpoint():
     assert duplicated_persona["background_story"] == original_persona["background_story"]
 
     # Verify both personas exist
-    list_resp = client.get("/agent/personas")
+    list_resp = client.get("/api/agent/personas")
     assert list_resp.status_code == 200
     personas = list_resp.json()
     assert len(personas) == 2
 
     # Verify we can get both by ID
-    get_original = client.get(f"/agent/personas/{original_id}")
+    get_original = client.get(f"/api/agent/personas/{original_id}")
     assert get_original.status_code == 200
-    get_duplicate = client.get(f"/agent/personas/{duplicated_persona['id']}")
+    get_duplicate = client.get(f"/api/agent/personas/{duplicated_persona['id']}")
     assert get_duplicate.status_code == 200

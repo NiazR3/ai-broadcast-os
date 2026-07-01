@@ -240,10 +240,14 @@ class TestMetricsCollector:
         bus = EventBus()
         sm = SessionManager(db)
         mc = MetricsCollector(db, bus, sm)
-        mc.start()
-        assert mc.is_running
-        mc.stop()
-        assert not mc.is_running
+        
+        async def _test():
+            mc.start()
+            assert mc.is_running
+            mc.stop()
+            assert not mc.is_running
+
+        asyncio.run(_test())
 
     def test_broadcast_start_creates_session(self, db):
         bus = EventBus()
@@ -432,23 +436,23 @@ class TestAnalyticsAPI:
         test_agent.stop()
 
     def test_list_sessions_empty(self, client):
-        resp = client.get("/analytics/sessions", headers=_HEADERS)
+        resp = client.get("/api/analytics/sessions", headers=_HEADERS)
         assert resp.status_code == 200
         data = resp.json()
         assert isinstance(data, list)
 
     def test_get_session_not_found(self, client):
-        resp = client.get("/analytics/sessions/nonexistent", headers=_HEADERS)
+        resp = client.get("/api/analytics/sessions/nonexistent", headers=_HEADERS)
         assert resp.status_code == 404
 
     def test_live_metrics_no_session(self, client):
-        resp = client.get("/analytics/live", headers=_HEADERS)
+        resp = client.get("/api/analytics/live", headers=_HEADERS)
         assert resp.status_code == 200
         data = resp.json()
         assert data["live"] is False
 
     def test_dashboard_empty(self, client):
-        resp = client.get("/analytics/dashboard", headers=_HEADERS)
+        resp = client.get("/api/analytics/dashboard", headers=_HEADERS)
         assert resp.status_code == 200
         data = resp.json()
         assert data["live_session"] is None
@@ -475,7 +479,7 @@ class TestAnalyticsAPI:
         ))
         sm.close_session(s.id)
 
-        resp = client.get(f"/analytics/sessions/{s.id}/report", headers=_HEADERS)
+        resp = client.get(f"/api/analytics/sessions/{s.id}/report", headers=_HEADERS)
         assert resp.status_code == 200
         report = resp.json()
         assert report["session_id"] == s.id
@@ -493,7 +497,7 @@ class TestAnalyticsAPI:
             timestamp=100.0, viewer_count=10,
         ))
 
-        resp = client.get(f"/analytics/sessions/{s.id}/report.csv", headers=_HEADERS)
+        resp = client.get(f"/api/analytics/sessions/{s.id}/report.csv", headers=_HEADERS)
         assert resp.status_code == 200
         assert resp.headers["content-type"].startswith("text/csv")
         assert "viewer_count" in resp.text

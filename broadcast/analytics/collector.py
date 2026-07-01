@@ -54,6 +54,7 @@ class MetricsCollector:
         self._snapshot_task: Optional[asyncio.Task] = None
         self._current_session_id: Optional[str] = None
         self._message_counts: dict[str, int] = {}  # user → count
+        self._current_viewer_count: int = 0
 
     @property
     def is_running(self) -> bool:
@@ -63,17 +64,18 @@ class MetricsCollector:
         """Start listening for events. Must be called from an async context."""
         if self._running:
             return
-        self._running = True
         self._reset_chat_window()
 
         try:
             loop = asyncio.get_running_loop()
         except RuntimeError:
             logger.warning(
-                "MetricsCollector: no running event loop — deferred; "
+                "MetricsCollector: no running event loop — "
                 "call start() from an async context or use FastAPI lifespan"
             )
             return
+
+        self._running = True
 
         self._broadcast_task = loop.create_task(self._consume("broadcast"))
         self._audience_task = loop.create_task(self._consume("audience.chat"))
@@ -131,12 +133,18 @@ class MetricsCollector:
         analytics_events_total.labels(event_type=event_type).inc()
 
     def _on_broadcast_started(self, event: dict) -> None:
-        """Handle broadcast start."""
+        """Handle broadcast start. Guards against duplicate start events."""
+        if self._current_session_id is not None:
+            logger.warning(
+                "Received broadcast.started while session %s is still live; closing it.",
+                self._current_session_id,
+            )
+            self._on_broadcast_stopped()
         platforms = event.get("platforms", [])
         session = self._session_manager.create_session(platforms=platforms)
         self._current_session_id = session.id
         self._reset_chat_window()
-        self._message_counts = {}
+        self._current_session_id = None  # Clear eagerly — always, even on failure
         broadcast_sessions_total.inc()
         broadcast_sessions_active.set(1)
         logger.info("Broadcast started, session=%s", session.id)
@@ -144,12 +152,17 @@ class MetricsCollector:
     def _on_broadcast_stopped(self) -> None:
         """Handle broadcast stop."""
         session_id = self._current_session_id
+        self._current_session_id = None  # Clear eagerly — always, even on failure
         if session_id:
-            closed = self._session_manager.close_session(session_id)
-            self._take_snapshot(final=True)
-            self._current_session_id = None
-            if closed:
-                broadcast_duration_seconds.observe(closed.duration_seconds)
+            try:
+                closed = self._session_manager.close_session(session_id)
+                self._take_snapshot(final=True)
+                if closed:
+                    broadcast_duration_seconds.observe(closed.duration_seconds)
+            except Exception:
+                logger.exception(
+                    "Failed to properly close session %s", session_id,
+                )
         broadcast_sessions_active.set(0)
         logger.info("Broadcast stopped, session=%s closed", session_id)
 
@@ -169,6 +182,10 @@ class MetricsCollector:
         user = event.get("user", "anonymous")
         self._message_counts[user] = self._message_counts.get(user, 0) + 1
 
+        text = event.get("text", "")
+        if len(text) > 100:
+            logger.warning("Chat message text truncated from %d to 100 chars for session %s", len(text), self._current_session_id)
+
         session_id = self._current_session_id
         if session_id:
             self._db.insert_event(AnalyticsEvent(
@@ -178,10 +195,14 @@ class MetricsCollector:
                 event_type="audience.chat.message",
                 payload={
                     "user": user,
-                    "text": event.get("text", "")[:100],
+                    "text": text[:100],
                     "platform": event.get("platform", ""),
                 },
             ))
+
+    def set_viewer_count(self, count: int) -> None:
+        """Update the current viewer count fed into snapshots."""
+        self._current_viewer_count = count
 
     def _log_event(self, event_type: str, payload: dict) -> None:
         """Record a generic event to the event log."""
@@ -204,7 +225,7 @@ class MetricsCollector:
 
         # Get live metrics from session
         session = self._session_manager.get_session(session_id)
-        viewer_count = (session.peak_viewers or 0) if session else 0
+        viewer_count = self._current_viewer_count
 
         # Compute chat rate (messages/min over the window)
         elapsed = time() - self._chat_window_start
@@ -221,12 +242,15 @@ class MetricsCollector:
         self._db.insert_snapshot(snapshot)
         analytics_snapshots_total.inc()
 
-        if final:
-            self._reset_chat_window()
+        # Reset window so the next snapshot measures the next interval
+        self._reset_chat_window()
 
     async def _snapshot_loop(self) -> None:
         """Periodically take snapshots while a session is live."""
         while self._running:
             await asyncio.sleep(self.SNAPSHOT_INTERVAL)
             if self._current_session_id:
-                self._take_snapshot()
+                try:
+                    self._take_snapshot()
+                except Exception:
+                    logger.exception("Metrics snapshot failed, continuing loop")

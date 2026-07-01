@@ -60,6 +60,20 @@ def _render_gridlines(
     return lines
 
 
+def _contrast_text_color(bg_hex: str) -> str:
+    """Return '#000' or '#fff' — whichever gives better WCAG contrast on bg_hex."""
+    h = bg_hex.lstrip("#")
+    r, g, b = int(h[0:2], 16) / 255, int(h[2:4], 16) / 255, int(h[4:6], 16) / 255
+
+    def linearize(c: float) -> float:
+        return c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4
+
+    lum = 0.2126 * linearize(r) + 0.7152 * linearize(g) + 0.0722 * linearize(b)
+    # Pick the text colour with higher WCAG contrast on this background.
+    # Boundary at lum≈0.179 where both give 4.58:1.
+    return "#000" if lum > 0.179 else "#fff"
+
+
 def _escape_xml(text: str) -> str:
     """Escape special XML characters."""
     return (text
@@ -293,8 +307,8 @@ class ChartRenderer:
         if not all_values:
             all_values = [100]
 
-        total = sum(all_values)
-        if total == 0:
+        total = sum(v for v in all_values if v > 0)
+        if total <= 0:
             total = 1
 
         # Render pie segments
@@ -330,10 +344,11 @@ class ChartRenderer:
             lx = cx + label_r * math.cos(mid_rad)
             ly = cy + label_r * math.sin(mid_rad)
             pct = (val / total) * 100
+            text_fill = _contrast_text_color(color)
             labels_svg += (
                 f'<text x="{lx:.1f}" y="{ly:.1f}" '
                 f'text-anchor="middle" dominant-baseline="central" '
-                f'font-size="11" font-weight="bold" fill="#fff">'
+                f'font-size="11" font-weight="bold" fill="{text_fill}">'
                 f'{pct:.1f}%</text>'
             )
 

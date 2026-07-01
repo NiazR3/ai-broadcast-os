@@ -1,0 +1,29 @@
+{
+  "title": "AI Broadcast Demo Episode",
+  "segments": [
+    {
+      "id": "intro",
+      "type": "intro",
+      "title": "Welcome to AI Broadcast",
+      "duration_seconds": 30,
+      "scene_name": "Intro",
+      "dialogue_prompt": "Welcome viewers to the AI-powered broadcast system. Introduce the hosts and explain what we'll be demonstrating today."
+    },
+    {
+      "id": "demo",
+      "type": "content",
+      "title": "AI Agent Demonstration",
+      "duration_seconds": 60,
+      "scene_name": "Demo",
+      "dialogue_prompt": "Discuss how AI agents collaborate in broadcast systems: producer, director, host, and co-host. Explain their roles and how they work together to create compelling content."
+    },
+    {
+      "id": "outro",
+      "type": "outro",
+      "title": "Closing Thoughts",
+      "duration_seconds": 30,
+      "scene_name": "Outro",
+      "dialogue_prompt": "Thank viewers for watching, summarize what was demonstrated, and invite them to explore the AI broadcast system further."
+    }
+  ]
+}

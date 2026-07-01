@@ -77,7 +77,7 @@ def get_session_report(session_id: str) -> dict:
 
 
 @router.get("/sessions/{session_id}/report.csv", response_class=PlainTextResponse)
-def get_session_report_csv(session_id: str) -> str:
+def get_session_report_csv(session_id: str) -> PlainTextResponse:
     """Download metrics snapshots as CSV."""
     csv_str = get_agent().report_generator.build_csv(session_id)
     if csv_str is None:

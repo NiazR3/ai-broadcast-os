@@ -42,8 +42,8 @@ class ProducerAgent(BaseAgent):
 
     def add_segment(self, script: EpisodeScript, segment: Segment) -> EpisodeScript:
         """Add a segment to an episode script."""
-        segment.order = len(script.segments)
-        script.segments.append(segment)
+        new_segment = segment.model_copy(update={"order": len(script.segments)})
+        script.segments.append(new_segment)
         logger.debug("Added segment '%s' to episode '%s'", segment.id, script.title)
         return script
 

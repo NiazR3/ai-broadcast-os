@@ -236,14 +236,14 @@ _HEADERS = {"X-API-Key": "test-key"}
 
 class TestResearchAPI:
     def test_submit_research(self, client):
-        resp = client.post("/research/submit", json={"query": "technology trends"}, headers=_HEADERS)
+        resp = client.post("/api/research/submit", json={"query": "technology trends"}, headers=_HEADERS)
         assert resp.status_code == 200
         data = resp.json()
         assert "summary" in data
         assert "key_points" in data
 
     def test_submit_with_segment_context(self, client):
-        resp = client.post("/research/submit", json={
+        resp = client.post("/api/research/submit", json={
             "query": "technology",
             "segment_id": "seg_test",
             "segment_title": "Test Segment",
@@ -255,47 +255,47 @@ class TestResearchAPI:
         assert "key_points" in data
 
     def test_submit_empty_query(self, client):
-        resp = client.post("/research/submit", json={"query": ""}, headers=_HEADERS)
+        resp = client.post("/api/research/submit", json={"query": ""}, headers=_HEADERS)
         assert resp.status_code == 422
 
     def test_submit_missing_query(self, client):
-        resp = client.post("/research/submit", json={}, headers=_HEADERS)
+        resp = client.post("/api/research/submit", json={}, headers=_HEADERS)
         assert resp.status_code == 422
 
     def test_list_results(self, client):
         # Submit first
-        client.post("/research/submit", json={"query": "weather"}, headers=_HEADERS)
-        resp = client.get("/research/results", headers=_HEADERS)
+        client.post("/api/research/submit", json={"query": "weather"}, headers=_HEADERS)
+        resp = client.get("/api/research/results", headers=_HEADERS)
         assert resp.status_code == 200
         data = resp.json()
         assert len(data) >= 1
 
     def test_get_result(self, client):
-        submit_resp = client.post("/research/submit", json={"query": "sports"}, headers=_HEADERS)
+        submit_resp = client.post("/api/research/submit", json={"query": "sports"}, headers=_HEADERS)
         result = submit_resp.json()
         result_id = result["id"]
-        resp = client.get(f"/research/results/{result_id}", headers=_HEADERS)
+        resp = client.get(f"/api/research/results/{result_id}", headers=_HEADERS)
         assert resp.status_code == 200
         data = resp.json()
         assert data["id"] == result_id
 
     def test_get_result_not_found(self, client):
-        resp = client.get("/research/results/nonexistent", headers=_HEADERS)
+        resp = client.get("/api/research/results/nonexistent", headers=_HEADERS)
         assert resp.status_code == 404
 
     def test_extract_topics(self, client):
-        resp = client.post("/research/extract", json={"text": "technology and sports news"}, headers=_HEADERS)
+        resp = client.post("/api/research/extract", json={"text": "technology and sports news"}, headers=_HEADERS)
         assert resp.status_code == 200
         data = resp.json()
         assert "technology" in data["topics"]
         assert "sports" in data["topics"]
 
     def test_extract_topics_empty(self, client):
-        resp = client.post("/research/extract", json={"text": ""}, headers=_HEADERS)
+        resp = client.post("/api/research/extract", json={"text": ""}, headers=_HEADERS)
         assert resp.status_code == 422
 
     def test_extract_topics_no_match(self, client):
-        resp = client.post("/research/extract", json={"text": "something completely unrelated"}, headers=_HEADERS)
+        resp = client.post("/api/research/extract", json={"text": "something completely unrelated"}, headers=_HEADERS)
         assert resp.status_code == 200
         data = resp.json()
         assert data["topics"] == []

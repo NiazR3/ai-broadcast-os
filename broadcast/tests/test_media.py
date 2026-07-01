@@ -374,7 +374,7 @@ class TestMediaAPI:
     _headers = {"X-API-Key": "test-key"}
 
     def test_create_bar_chart(self, client):
-        resp = client.post("/media/chart", json={
+        resp = client.post("/api/media/chart", json={
             "chart_type": "bar",
             "title": "Test Chart",
             "labels": ["A", "B"],
@@ -387,7 +387,7 @@ class TestMediaAPI:
         assert "rect" in data["svg_content"]
 
     def test_create_line_chart(self, client):
-        resp = client.post("/media/chart", json={
+        resp = client.post("/api/media/chart", json={
             "chart_type": "line",
             "labels": ["A", "B"],
             "datasets": [{"label": "S1", "values": [10, 20]}],
@@ -397,7 +397,7 @@ class TestMediaAPI:
         assert "polyline" in data["svg_content"]
 
     def test_create_pie_chart(self, client):
-        resp = client.post("/media/chart", json={
+        resp = client.post("/api/media/chart", json={
             "chart_type": "pie",
             "labels": ["A", "B"],
             "datasets": [{"label": "S1", "values": [30, 70]}],
@@ -407,7 +407,7 @@ class TestMediaAPI:
         assert "path" in data["svg_content"]
 
     def test_create_chart_invalid_type(self, client):
-        resp = client.post("/media/chart", json={
+        resp = client.post("/api/media/chart", json={
             "chart_type": "invalid",
             "labels": ["A"],
             "datasets": [{"label": "S1", "values": [10]}],
@@ -415,7 +415,7 @@ class TestMediaAPI:
         assert resp.status_code == 422
 
     def test_create_chart_missing_labels(self, client):
-        resp = client.post("/media/chart", json={
+        resp = client.post("/api/media/chart", json={
             "chart_type": "bar",
             "labels": [],
             "datasets": [{"label": "S1", "values": [10]}],
@@ -423,7 +423,7 @@ class TestMediaAPI:
         assert resp.status_code == 422
 
     def test_create_chart_missing_datasets(self, client):
-        resp = client.post("/media/chart", json={
+        resp = client.post("/api/media/chart", json={
             "chart_type": "bar",
             "labels": ["A"],
             "datasets": [],
@@ -431,7 +431,7 @@ class TestMediaAPI:
         assert resp.status_code == 422
 
     def test_create_text_overlay(self, client):
-        resp = client.post("/media/text", json={
+        resp = client.post("/api/media/text", json={
             "text": "Live Now!",
             "font_size": 72,
         }, headers=self._headers)
@@ -441,83 +441,83 @@ class TestMediaAPI:
         assert "Live Now!" in data["svg_content"]
 
     def test_create_text_overlay_empty(self, client):
-        resp = client.post("/media/text", json={"text": ""}, headers=self._headers)
+        resp = client.post("/api/media/text", json={"text": ""}, headers=self._headers)
         assert resp.status_code == 422
 
     def test_list_assets(self, client):
-        client.post("/media/chart", json={
+        client.post("/api/media/chart", json={
             "chart_type": "bar",
             "labels": ["A"],
             "datasets": [{"label": "S1", "values": [10]}],
         }, headers=self._headers)
-        resp = client.get("/media/assets", headers=self._headers)
+        resp = client.get("/api/media/assets", headers=self._headers)
         assert resp.status_code == 200
         data = resp.json()
         assert len(data) >= 1
 
     def test_list_assets_filter_by_type(self, client):
-        client.post("/media/chart", json={
+        client.post("/api/media/chart", json={
             "chart_type": "bar",
             "labels": ["A"],
             "datasets": [{"label": "S1", "values": [10]}],
         }, headers=self._headers)
-        client.post("/media/text", json={"text": "Hello"}, headers=self._headers)
-        resp = client.get("/media/assets?type=chart", headers=self._headers)
+        client.post("/api/media/text", json={"text": "Hello"}, headers=self._headers)
+        resp = client.get("/api/media/assets?type=chart", headers=self._headers)
         assert resp.status_code == 200
         for asset in resp.json():
             assert asset["type"] == "chart"
 
     def test_get_asset(self, client):
-        create_resp = client.post("/media/chart", json={
+        create_resp = client.post("/api/media/chart", json={
             "chart_type": "bar",
             "labels": ["A"],
             "datasets": [{"label": "S1", "values": [10]}],
         }, headers=self._headers)
         asset_id = create_resp.json()["id"]
-        resp = client.get(f"/media/assets/{asset_id}", headers=self._headers)
+        resp = client.get(f"/api/media/assets/{asset_id}", headers=self._headers)
         assert resp.status_code == 200
         assert resp.json()["id"] == asset_id
 
     def test_get_asset_not_found(self, client):
-        resp = client.get("/media/assets/nonexistent", headers=self._headers)
+        resp = client.get("/api/media/assets/nonexistent", headers=self._headers)
         assert resp.status_code == 404
 
     def test_delete_asset(self, client):
-        create_resp = client.post("/media/chart", json={
+        create_resp = client.post("/api/media/chart", json={
             "chart_type": "bar",
             "labels": ["A"],
             "datasets": [{"label": "S1", "values": [10]}],
         }, headers=self._headers)
         asset_id = create_resp.json()["id"]
-        resp = client.delete(f"/media/assets/{asset_id}", headers=self._headers)
+        resp = client.delete(f"/api/media/assets/{asset_id}", headers=self._headers)
         assert resp.status_code == 200
         assert resp.json()["deleted"] is True
 
     def test_delete_asset_not_found(self, client):
-        resp = client.delete("/media/assets/nonexistent", headers=self._headers)
+        resp = client.delete("/api/media/assets/nonexistent", headers=self._headers)
         assert resp.status_code == 404
 
     def test_assign_asset(self, client):
-        create_resp = client.post("/media/chart", json={
+        create_resp = client.post("/api/media/chart", json={
             "chart_type": "bar",
             "labels": ["A"],
             "datasets": [{"label": "S1", "values": [10]}],
         }, headers=self._headers)
         asset_id = create_resp.json()["id"]
-        resp = client.post(f"/media/assets/{asset_id}/assign", json={"segment_id": "seg_1"}, headers=self._headers)
+        resp = client.post(f"/api/media/assets/{asset_id}/assign", json={"segment_id": "seg_1"}, headers=self._headers)
         assert resp.status_code == 200
         assert resp.json()["assigned"] is True
 
     def test_assign_asset_no_segment(self, client):
-        create_resp = client.post("/media/chart", json={
+        create_resp = client.post("/api/media/chart", json={
             "chart_type": "bar",
             "labels": ["A"],
             "datasets": [{"label": "S1", "values": [10]}],
         }, headers=self._headers)
         asset_id = create_resp.json()["id"]
-        resp = client.post(f"/media/assets/{asset_id}/assign", json={"segment_id": ""}, headers=self._headers)
+        resp = client.post(f"/api/media/assets/{asset_id}/assign", json={"segment_id": ""}, headers=self._headers)
         assert resp.status_code == 422
 
     def test_assign_asset_not_found(self, client):
-        resp = client.post("/media/assets/nonexistent/assign", json={"segment_id": "seg_1"}, headers=self._headers)
+        resp = client.post("/api/media/assets/nonexistent/assign", json={"segment_id": "seg_1"}, headers=self._headers)
         assert resp.status_code == 404

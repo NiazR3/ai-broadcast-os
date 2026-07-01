@@ -67,6 +67,12 @@ COHOST_GUEST = [
     "Thanks for joining us! {title} is such a fascinating topic.",
 ]
 
+COHOST_INTROS = [
+    "Can't wait to dive into {title}!",
+    "Alright, let's get into it — {title} is going to be great!",
+    "Looking forward to talking about {title} with everyone!",
+]
+
 COHOST_REACTION = [
     "Fascinating! Let's dig deeper into that.",
     "I didn't know that! Tell us more.",
@@ -266,7 +272,8 @@ class CoHostAgent(BaseAgent):
 
         # Base text generation
         if segment.type == SegmentType.INTRO:
-            text = f"Can't wait to dive into {segment.title}!"
+            template = self._next_template(COHOST_INTROS, f"intro_{segment.id}")
+            text = template.format(title=segment.title)
         elif segment.type == SegmentType.GUEST:
             template = self._next_template(COHOST_GUEST, f"guest_{segment.id}")
             text = template.format(title=segment.title)

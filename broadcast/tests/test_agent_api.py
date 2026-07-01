@@ -20,7 +20,7 @@ def clear_agent_state():
 
 class TestEpisodeEndpoints:
     def test_create_episode(self, client):
-        resp = client.post("/agent/episode", json={"title": "Morning Show"})
+        resp = client.post("/api/agent/episode", json={"title": "Morning Show"})
         assert resp.status_code == 200
         data = resp.json()
         assert data["title"] == "Morning Show"
@@ -28,33 +28,33 @@ class TestEpisodeEndpoints:
         assert data["status"] == "draft"
 
     def test_create_episode_missing_title(self, client):
-        resp = client.post("/agent/episode", json={"title": ""})
+        resp = client.post("/api/agent/episode", json={"title": ""})
         assert resp.status_code == 422
 
     def test_list_episodes(self, client):
-        client.post("/agent/episode", json={"title": "Show A"})
-        client.post("/agent/episode", json={"title": "Show B"})
-        resp = client.get("/agent/episodes")
+        client.post("/api/agent/episode", json={"title": "Show A"})
+        client.post("/api/agent/episode", json={"title": "Show B"})
+        resp = client.get("/api/agent/episodes")
         assert resp.status_code == 200
         data = resp.json()
         assert len(data) == 2
 
     def test_get_episode(self, client):
-        create = client.post("/agent/episode", json={"title": "My Show"})
+        create = client.post("/api/agent/episode", json={"title": "My Show"})
         ep_id = create.json()["id"]
-        resp = client.get(f"/agent/episode/{ep_id}")
+        resp = client.get(f"/api/agent/episode/{ep_id}")
         assert resp.status_code == 200
         assert resp.json()["title"] == "My Show"
 
     def test_get_nonexistent_episode(self, client):
-        resp = client.get("/agent/episode/nonexistent")
+        resp = client.get("/api/agent/episode/nonexistent")
         assert resp.status_code == 404
 
     def test_add_segment(self, client):
-        create = client.post("/agent/episode", json={"title": "Show"})
+        create = client.post("/api/agent/episode", json={"title": "Show"})
         ep_id = create.json()["id"]
         resp = client.post(
-            f"/agent/episode/{ep_id}/segment",
+            f"/api/agent/episode/{ep_id}/segment",
             json={"id": "intro", "type": "intro", "title": "Welcome", "duration_seconds": 30},
         )
         assert resp.status_code == 200
@@ -65,7 +65,7 @@ class TestEpisodeEndpoints:
 
 class TestDirectorEndpoints:
     def test_director_status_initial(self, client):
-        resp = client.get("/agent/director/status")
+        resp = client.get("/api/agent/director/status")
         assert resp.status_code == 200
         data = resp.json()
         assert data["current_segment"] is None
@@ -73,15 +73,15 @@ class TestDirectorEndpoints:
         assert data["running"] is False
 
     def test_load_episode(self, client):
-        create = client.post("/agent/episode", json={"title": "Show"})
+        create = client.post("/api/agent/episode", json={"title": "Show"})
         ep_id = create.json()["id"]
         # Add segments
-        client.post(f"/agent/episode/{ep_id}/segment",
+        client.post(f"/api/agent/episode/{ep_id}/segment",
                     json={"id": "intro", "type": "intro", "title": "Intro"})
-        client.post(f"/agent/episode/{ep_id}/segment",
+        client.post(f"/api/agent/episode/{ep_id}/segment",
                     json={"id": "main", "type": "content", "title": "Main Topic"})
         # Load into director
-        resp = client.post(f"/agent/episode/{ep_id}/load")
+        resp = client.post(f"/api/agent/episode/{ep_id}/load")
         assert resp.status_code == 200
         data = resp.json()
         assert data["loaded"] is True
@@ -89,25 +89,25 @@ class TestDirectorEndpoints:
         assert data["segment_count"] == 2
 
     def test_director_next_segment(self, client):
-        create = client.post("/agent/episode", json={"title": "Show"})
+        create = client.post("/api/agent/episode", json={"title": "Show"})
         ep_id = create.json()["id"]
-        client.post(f"/agent/episode/{ep_id}/segment",
+        client.post(f"/api/agent/episode/{ep_id}/segment",
                     json={"id": "intro", "type": "intro", "title": "Intro"})
-        client.post(f"/agent/episode/{ep_id}/load")
-        resp = client.post("/agent/director/next")
+        client.post(f"/api/agent/episode/{ep_id}/load")
+        resp = client.post("/api/agent/director/next")
         assert resp.status_code == 200
         data = resp.json()
         assert data["segment"]["id"] == "intro"
         assert data["has_more"] is False  # only one segment added
 
     def test_director_generate_dialogue(self, client):
-        create = client.post("/agent/episode", json={"title": "Show"})
+        create = client.post("/api/agent/episode", json={"title": "Show"})
         ep_id = create.json()["id"]
-        client.post(f"/agent/episode/{ep_id}/segment",
+        client.post(f"/api/agent/episode/{ep_id}/segment",
                     json={"id": "intro", "type": "intro", "title": "Welcome!"})
-        client.post(f"/agent/episode/{ep_id}/load")
-        client.post("/agent/director/next")  # advance to first segment
-        resp = client.post("/agent/director/generate")
+        client.post(f"/api/agent/episode/{ep_id}/load")
+        client.post("/api/agent/director/next")  # advance to first segment
+        resp = client.post("/api/agent/director/generate")
         assert resp.status_code == 200
         data = resp.json()
         assert "host" in data
@@ -120,7 +120,7 @@ class TestDirectorEndpoints:
 class TestDialogueEndpoints:
     def test_host_dialogue(self, client):
         resp = client.post(
-            "/agent/host/dialogue",
+            "/api/agent/host/dialogue",
             json={"id": "test", "type": "intro", "title": "Hello World"},
         )
         assert resp.status_code == 200
@@ -129,7 +129,7 @@ class TestDialogueEndpoints:
 
     def test_cohost_dialogue(self, client):
         resp = client.post(
-            "/agent/cohost/dialogue",
+            "/api/agent/cohost/dialogue",
             json={"id": "test", "type": "content", "title": "Tech News"},
         )
         assert resp.status_code == 200

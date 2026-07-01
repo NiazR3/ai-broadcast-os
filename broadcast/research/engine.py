@@ -5,6 +5,7 @@ from __future__ import annotations
 import abc
 import asyncio
 import logging
+import threading
 from time import time
 from typing import Optional
 
@@ -251,11 +252,13 @@ class ResearchEngine:
         self._results: dict[str, ResearchResult] = {}
         self._topics: dict[str, ResearchTopic] = {}
         self._id_counter: int = 0
+        self._lock: threading.Lock = threading.Lock()
 
     def _next_id(self) -> str:
         """Generate a unique topic ID using timestamp and counter."""
-        self._id_counter += 1
-        return f"topic_{int(time() * 1000)}_{self._id_counter}"
+        with self._lock:
+            self._id_counter += 1
+            return f"topic_{int(time() * 1000)}_{self._id_counter}"
 
     def submit(self, topic: ResearchTopic, backend: ResearchBackend) -> str:
         """Submit a topic for research and return the result ID.

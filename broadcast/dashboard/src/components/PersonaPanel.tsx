@@ -1,9 +1,10 @@
-import { useState, useEffect, DragEvent } from "react";
+import { useState, useEffect } from "react";
+import type { DragEvent } from "react";
 import {
   listPersonas, deletePersona,
   assignHostPersona, removeHostPersona,
   assignCoHostPersona, removeCoHostPersona,
-  duplicatePersona,
+  duplicatePersona, reorderPersonas,
 } from "../lib/api";
 import type { PersonaProfile } from "../lib/api";
 import { PersonaEditor } from "./PersonaEditor";
@@ -17,6 +18,7 @@ export function PersonaPanel() {
   const [error, setError] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const [loading, setLoading] = useState(true);
 
   const fetchPersonas = async () => {
     try {
@@ -26,7 +28,14 @@ export function PersonaPanel() {
     }
   };
 
-  useEffect(() => { fetchPersonas(); }, []);
+  useEffect(() => {
+    const load = async () => {
+      setLoading(true);
+      await fetchPersonas();
+      setLoading(false);
+    };
+    load();
+  }, []);
 
   const handleDelete = async (p: PersonaProfile) => {
     setError(null);
@@ -99,15 +108,11 @@ export function PersonaPanel() {
   const handleDeleteSelected = async () => {
     setError(null);
     try {
-      // Delete selected personas one by one
       for (const id of selectedIds) {
         await deletePersona(id);
-
-        // Update assigned persona IDs if needed
         if (hostPersonaId === id) setHostPersonaId(null);
         if (cohostPersonaId === id) setCohostPersonaId(null);
       }
-
       setSelectedIds([]);
       await fetchPersonas();
     } catch {
@@ -118,11 +123,9 @@ export function PersonaPanel() {
   const handleDuplicateSelected = async () => {
     setError(null);
     try {
-      // Duplicate selected personas one by one
       for (const id of selectedIds) {
         await duplicatePersona(id);
       }
-
       await fetchPersonas();
     } catch {
       setError("Failed to duplicate selected personas");
@@ -132,16 +135,10 @@ export function PersonaPanel() {
   const handleAssignToHost = async () => {
     setError(null);
     try {
-      // Assign all selected personas to host (one at a time)
-      // Note: backend only supports one host — last-selected persona becomes host
       for (const id of selectedIds) {
         await assignHostPersona(id);
       }
-      // Set the last selected persona as the host (or we could set the first one)
-      // For simplicity, we'll just fetch personas to update the UI
       await fetchPersonas();
-
-      // Clear selection after assignment
       setSelectedIds([]);
     } catch {
       setError("Failed to assign selected personas to host");
@@ -156,21 +153,26 @@ export function PersonaPanel() {
     e.preventDefault();
   };
 
-  const handleDrop = (index: number) => {
+  const handleDrop = async (index: number) => {
     if (dragIndex === null || dragIndex === index) return;
 
-    setPersonas(prev => {
-      const newArray = [...prev];
-      const [removed] = newArray.splice(dragIndex!, 1);
-      newArray.splice(index, 0, removed);
-      return newArray;
-    });
+    const newPersonasOrder = [...personas];
+    const [removed] = newPersonasOrder.splice(dragIndex!, 1);
+    newPersonasOrder.splice(index, 0, removed);
 
-    setDragIndex(null);
+    setPersonas(newPersonasOrder);
+
+    try {
+      await reorderPersonas(newPersonasOrder.map(p => p.id));
+    } catch (err) {
+      setError("Failed to reorder personas");
+      fetchPersonas();
+    } finally {
+      setDragIndex(null);
+    }
   };
 
   const getHealthStatus = (persona: PersonaProfile): { text: string; color: string } => {
-    // Check if persona is assigned to host or co-host
     if (hostPersonaId === persona.id) {
       return { text: "Assigned (Host)", color: "text-green-700" };
     }
@@ -178,7 +180,6 @@ export function PersonaPanel() {
       return { text: "Assigned (Co-Host)", color: "text-purple-700" };
     }
 
-    // Check if persona has essential fields filled
     const hasName = !!persona.name?.trim();
     const hasTraits = persona.personality_traits.length > 0;
     const hasCatchphrases = persona.catchphrases.length > 0;
@@ -202,175 +203,270 @@ export function PersonaPanel() {
     }
   };
 
+  const healthBadge = (persona: PersonaProfile): string => {
+    if (hostPersonaId === persona.id) return "badge--brand";
+    if (cohostPersonaId === persona.id) return "badge--info";
+    const hasName = !!persona.name?.trim();
+    const hasTraits = persona.personality_traits.length > 0;
+    const hasCatchphrases = persona.catchphrases.length > 0;
+    const hasEmotions = persona.emotional_range.length > 0;
+    const hasBackground = !!persona.background_story?.trim();
+    const completeness = (
+      (hasName ? 1 : 0) + (hasTraits ? 1 : 0) +
+      (hasCatchphrases ? 1 : 0) + (hasEmotions ? 1 : 0) +
+      (hasBackground ? 1 : 0)
+    ) / 5;
+    if (completeness >= 0.8) return "badge--live";
+    if (completeness >= 0.5) return "badge--warning";
+    return "badge--danger";
+  };
+
   return (
-    <div className="space-y-4">
-      <div className="flex justify-between items-center">
-        <div className="flex flex-col">
-          <h3 className="font-semibold">Persona Profiles</h3>
-          {selectedIds.length > 0 && (
-            <span className="text-xs text-blue-600 mt-1">
-              {selectedIds.length} selected
-            </span>
-          )}
+    <div className="space-y-5">
+      {/* ── Section Header ── */}
+      <div className="section-header">
+        <div>
+          <h3 className="section-header__title">Persona Profiles</h3>
+          <p className="section-header__subtitle">
+            Manage AI personalities for your broadcast
+            {selectedIds.length > 0 && (
+              <span className="ml-2 text-brand">
+                &middot; {selectedIds.length} selected
+              </span>
+            )}
+          </p>
         </div>
-        <div className="flex space-x-2">
-          <button onClick={() => setShowNew(true)}
-            className="px-3 py-1.5 bg-blue-600 text-white rounded text-sm hover:bg-blue-700">
-            + New Persona
-          </button>
+        <div className="section-header__actions">
           {selectedIds.length > 0 && (
             <>
-              <button onClick={handleDuplicateSelected}
-                className="px-3 py-1.5 bg-green-600 text-white rounded text-sm hover:bg-green-700 disabled:opacity-50"
-                disabled={selectedIds.length === 0}>
+              <button onClick={handleDuplicateSelected} className="btn btn-ghost btn--sm">
                 Duplicate
               </button>
-              <button onClick={handleDeleteSelected}
-                className="px-3 py-1.5 bg-red-600 text-white rounded text-sm hover:bg-red-700 disabled:opacity-50"
-                disabled={selectedIds.length === 0}>
+              <button onClick={handleDeleteSelected} className="btn btn-danger btn--sm">
                 Delete Selected
               </button>
             </>
           )}
+          <button onClick={() => setShowNew(true)} className="btn btn-primary btn--sm">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden="true">
+              <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
+            </svg>
+            New Persona
+          </button>
         </div>
       </div>
 
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {/* ── Error Banner ── */}
+      {error && (
+        <div className="animate-fade-in-down flex items-center gap-2.5 rounded-lg border border-danger/30 bg-danger-bg px-4 py-3 text-sm text-danger" role="alert">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="shrink-0" aria-hidden="true">
+            <circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" />
+          </svg>
+          {error}
+        </div>
+      )}
 
-      {/* Bulk actions */}
+      {/* ── Assignment Status ── */}
+      <div className="flex items-center gap-4">
+        <span className="flex items-center gap-1.5 text-xs">
+          <span className="inline-block h-2 w-2 rounded-full bg-brand" />
+          <span className="text-text-secondary">Host:</span>
+          <span className={hostPersonaId ? "font-medium text-text" : "text-text-muted"}>
+            {hostPersonaId ? personas.find(p => p.id === hostPersonaId)?.name ?? "Assigned" : "Default"}
+          </span>
+        </span>
+        <span className="flex items-center gap-1.5 text-xs">
+          <span className="inline-block h-2 w-2 rounded-full bg-info" />
+          <span className="text-text-secondary">Co-Host:</span>
+          <span className={cohostPersonaId ? "font-medium text-text" : "text-text-muted"}>
+            {cohostPersonaId ? personas.find(p => p.id === cohostPersonaId)?.name ?? "Assigned" : "Default"}
+          </span>
+        </span>
+      </div>
+
+      {/* ── Bulk Action Bar ── */}
       {personas.length > 0 && (
-        <div className="flex items-center space-x-4 p-3 bg-gray-50 rounded mb-4">
-          <div className="flex items-center">
+        <div className="card card--elevated flex items-center gap-4 px-4 py-3">
+          <label className="flex cursor-pointer items-center gap-2">
             <input
               type="checkbox"
               checked={selectedIds.length === personas.length && personas.length > 0}
               onChange={handleSelectAll}
-              className="h-4 w-4 text-blue-600"
+              className="h-4 w-4 rounded border-border bg-bg-base text-brand focus:ring-2 focus:ring-brand/50"
             />
-            <span className="ml-2 text-sm font-medium">Select All</span>
-          </div>
-          <div className="flex-1 text-right text-sm text-gray-500">
-            {selectedIds.length} of {personas.length} selected
-          </div>
+            <span className="text-sm font-medium text-text-secondary select-none">Select All</span>
+          </label>
+          <span className="flex-1 text-right text-xs text-text-muted">
+            <span className="data-value">{selectedIds.length}</span> of{" "}
+            <span className="data-value">{personas.length}</span> selected
+          </span>
           {selectedIds.length > 0 && (
-            <button onClick={handleAssignToHost}
-              className="px-3 py-1.5 bg-indigo-600 text-white rounded text-sm hover:bg-indigo-700 disabled:opacity-50"
-              disabled={selectedIds.length === 0}>
+            <button onClick={handleAssignToHost} className="btn btn-ghost btn--sm">
               Assign to All Hosts
             </button>
           )}
         </div>
       )}
 
-      {/* Assignment status */}
-      <div className="flex gap-4 text-xs">
-        <span className={hostPersonaId ? "text-green-700" : "text-gray-500"}>
-          Host: {hostPersonaId ? personas.find(p => p.id === hostPersonaId)?.name ?? "Assigned" : "Default"}
-        </span>
-        <span className={cohostPersonaId ? "text-purple-700" : "text-gray-500"}>
-          Co-Host: {cohostPersonaId ? personas.find(p => p.id === cohostPersonaId)?.name ?? "Assigned" : "Default"}
-        </span>
-      </div>
-
-      {/* Persona list with drag-and-drop */}
+      {/* ── Persona List ── */}
       <div className="space-y-2">
-        <div className="space-y-1">
-          {personas.map((p, index) => (
-            <div
-              key={p.id}
-              draggable={true}
-              className={`border rounded p-3 space-y-1 hover:border-gray-400 transition-colors cursor-grab
-                ${selectedIds.includes(p.id) ? "border-blue-300 bg-blue-50" : ""}
-                ${dragIndex === index ? "opacity-50" : ""}`}
-              onDragStart={() => handleDragStart(index)}
-              onDragOver={(e) => handleDragOver(e)}
-              onDrop={() => handleDrop(index)}
-            >
-              <div className="flex justify-between items-start">
-                <div className="flex items-start space-x-3">
-                  <div className="flex-shrink-0">
-                    <div className={`w-3 h-3 rounded-full
-                      ${hostPersonaId === p.id ? "bg-green-500" : cohostPersonaId === p.id ? "bg-purple-500" : "bg-gray-400"}
-                    `} aria-label={hostPersonaId === p.id ? "Host" : cohostPersonaId === p.id ? "Co-Host" : "Unassigned"}/>
-                  </div>
-                  <div>
-                    <p className="font-medium text-sm">{p.name}</p>
-                    <p className="text-xs text-gray-500">
-                      {p.agent_type} · {p.voice_style}
-                      {p.personality_traits.length > 0 && ` · ${p.personality_traits.join(", ")}`}
-                    </p>
-                  </div>
+        {loading ? (
+          Array.from({ length: 3 }).map((_, i) => (
+            <div key={i} className="card space-y-3" aria-hidden="true">
+              <div className="flex items-start gap-3">
+                <div className="h-3 w-3 shrink-0 rounded-full bg-border animate-pulse" />
+                <div className="flex-1 space-y-2">
+                  <div className="h-4 w-40 rounded bg-border animate-pulse" />
+                  <div className="h-3 w-64 rounded bg-border animate-pulse" />
                 </div>
-                <div className="flex items-center space-x-2">
-                  <div className={getHealthStatus(p).color}>
-                    <span className="text-xs">{getHealthStatus(p).text}</span>
+                <div className="flex gap-2">
+                  <div className="h-6 w-16 rounded bg-border animate-pulse" />
+                  <div className="h-6 w-14 rounded bg-border animate-pulse" />
+                </div>
+              </div>
+            </div>
+          ))
+        ) : personas.length === 0 ? (
+          <div className="card py-10 text-center">
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="mx-auto mb-3 text-text-muted" aria-hidden="true">
+              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+              <circle cx="9" cy="7" r="4" />
+              <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+              <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+            </svg>
+            <p className="text-sm text-text-muted">
+              No personas yet. Create one to customize how your agents sound.
+            </p>
+          </div>
+        ) : (
+          personas.map((p, index) => {
+            const health = getHealthStatus(p);
+            const badgeClass = healthBadge(p);
+            const isHost = hostPersonaId === p.id;
+            const isCoHost = cohostPersonaId === p.id;
+            const isDragOver = dragIndex === index;
+
+            return (
+              <div
+                key={p.id}
+                draggable={true}
+                className={`card transition-all duration-150 ${
+                  isDragOver ? "opacity-50" : ""
+                } ${
+                  selectedIds.includes(p.id)
+                    ? "border-brand/40"
+                    : "card--interactive"
+                }`}
+                onDragStart={() => handleDragStart(index)}
+                onDragOver={(e) => handleDragOver(e)}
+                onDrop={() => handleDrop(index)}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  {/* Drag handle + dot indicator + info */}
+                  <div className="flex min-w-0 flex-1 items-start gap-3">
+                    {/* Drag handle */}
+                    <div className="mt-0.5 shrink-0 cursor-grab text-text-muted active:cursor-grabbing" title="Drag to reorder" aria-label="Drag to reorder" role="img">
+                      <svg width="12" height="16" viewBox="0 0 12 16" fill="currentColor" aria-hidden="true">
+                        <circle cx="3" cy="3" r="1.5" /><circle cx="9" cy="3" r="1.5" />
+                        <circle cx="3" cy="8" r="1.5" /><circle cx="9" cy="8" r="1.5" />
+                        <circle cx="3" cy="13" r="1.5" /><circle cx="9" cy="13" r="1.5" />
+                      </svg>
+                    </div>
+
+                    {/* Role dot */}
+                    <div className="shrink-0">
+                      <div
+                        className={`h-3 w-3 rounded-full ${
+                          isHost ? "bg-brand" : isCoHost ? "bg-info" : "bg-text-muted"
+                        }`}
+                        aria-label={isHost ? "Host" : isCoHost ? "Co-Host" : "Unassigned"}
+                      />
+                    </div>
+
+                    {/* Persona info */}
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-semibold text-text">{p.name}</p>
+                      <p className="mt-0.5 truncate text-xs text-text-secondary">
+                        {p.agent_type}
+                        <span className="mx-1">&middot;</span>
+                        {p.voice_style}
+                        {p.personality_traits.length > 0 && (
+                          <>
+                            <span className="mx-1">&middot;</span>
+                            {p.personality_traits.join(", ")}
+                          </>
+                        )}
+                      </p>
+                    </div>
                   </div>
-                  <div className="flex gap-1">
+
+                  {/* Right side: badge + actions */}
+                  <div className="flex shrink-0 items-center gap-2">
+                    <span className={`badge ${badgeClass}`}>{health.text}</span>
                     <input
                       type="checkbox"
                       checked={selectedIds.includes(p.id)}
                       onChange={() => handleToggleSelect(p.id)}
-                      className="h-4 w-4 text-blue-600"
+                      className="h-4 w-4 rounded border-border bg-bg-base text-brand focus:ring-2 focus:ring-brand/50"
+                      aria-label={`Select ${p.name}`}
                     />
-                    <button onClick={() => setEditing(p)}
-                      className="px-2 py-0.5 text-xs border rounded hover:bg-gray-50">
+                    <button onClick={() => setEditing(p)} className="btn btn-ghost btn--sm" aria-label="Edit persona">
                       Edit
                     </button>
-                    <button onClick={() => handleDelete(p)}
-                      className="px-2 py-0.5 text-xs border rounded text-red-600 hover:bg-red-50">
-                      Delete
+                    <button onClick={() => handleDelete(p)} className="btn btn-ghost btn--sm text-danger hover:bg-danger-bg" aria-label="Delete persona">
+                      Del
                     </button>
                   </div>
                 </div>
-              </div>
 
-              {p.catchphrases.length > 0 && (
-                <p className="text-xs text-gray-600 italic">
-                  Catchphrases: {p.catchphrases.join(", ")}
-                </p>
-              )}
-              {p.emotional_range.length > 0 && (
-                <p className="text-xs text-gray-500">
-                  Emotions: {p.emotional_range.join(", ")}
-                </p>
-              )}
+                {/* Catchphrases + Emotions */}
+                <div className="mt-2 space-y-0.5 pl-7">
+                  {p.catchphrases.length > 0 && (
+                    <p className="truncate text-xs italic text-text-muted">
+                      &ldquo;{p.catchphrases.join(", ")}&rdquo;
+                    </p>
+                  )}
+                  {p.emotional_range.length > 0 && (
+                    <p className="truncate text-xs text-text-muted">
+                      Emotions: {p.emotional_range.join(", ")}
+                    </p>
+                  )}
+                </div>
 
-              {/* Assignment buttons */}
-              <div className="flex gap-2 mt-1">
-                {hostPersonaId === p.id ? (
-                  <button onClick={handleRemoveHost}
-                    className="px-2 py-0.5 text-xs bg-orange-100 text-orange-700 rounded hover:bg-orange-200">
-                    Unassign Host
-                  </button>
-                ) : (
-                  <button onClick={() => handleAssignHost(p.id)}
-                    className="px-2 py-0.5 text-xs bg-blue-50 text-blue-700 rounded hover:bg-blue-100">
-                    Assign to Host
-                  </button>
-                )}
-                {cohostPersonaId === p.id ? (
-                  <button onClick={handleRemoveCoHost}
-                    className="px-2 py-0.5 text-xs bg-orange-100 text-orange-700 rounded hover:bg-orange-200">
-                    Unassign Co-Host
-                  </button>
-                ) : (
-                  <button onClick={() => handleAssignCoHost(p.id)}
-                    className="px-2 py-0.5 text-xs bg-purple-50 text-purple-700 rounded hover:bg-purple-100">
-                    Assign to Co-Host
-                  </button>
-                )}
+                {/* Assignment buttons */}
+                <div className="mt-3 flex gap-2 pl-7">
+                  {isHost ? (
+                    <button onClick={handleRemoveHost}
+                      className="btn btn-ghost btn--sm text-accent hover:bg-accent-bg">
+                      <span className="inline-block h-1.5 w-1.5 rounded-full bg-accent" />
+                      Unassign Host
+                    </button>
+                  ) : (
+                    <button onClick={() => handleAssignHost(p.id)}
+                      className="btn btn-ghost btn--sm text-brand hover:bg-brand/10">
+                      Assign to Host
+                    </button>
+                  )}
+                  {isCoHost ? (
+                    <button onClick={handleRemoveCoHost}
+                      className="btn btn-ghost btn--sm text-accent hover:bg-accent-bg">
+                      <span className="inline-block h-1.5 w-1.5 rounded-full bg-accent" />
+                      Unassign Co-Host
+                    </button>
+                  ) : (
+                    <button onClick={() => handleAssignCoHost(p.id)}
+                      className="btn btn-ghost btn--sm text-info hover:bg-info/10">
+                      Assign to Co-Host
+                    </button>
+                  )}
+                </div>
               </div>
-            </div>
-          ))}
-          {personas.length === 0 && (
-            <p className="text-xs text-gray-400 text-center py-4">
-              No personas yet. Create one to customize how your agents sound.
-            </p>
-          )}
-        </div>
+            );
+          })
+        )}
       </div>
 
-      {/* Editor modals */}
+      {/* ── Editor Modals ── */}
       {showNew && <PersonaEditor persona={null} onSave={() => { setShowNew(false); fetchPersonas(); }} onCancel={() => setShowNew(false)} />}
       {editing && <PersonaEditor persona={editing} onSave={() => { setEditing(null); fetchPersonas(); }} onCancel={() => setEditing(null)} />}
     </div>

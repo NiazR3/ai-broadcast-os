@@ -248,13 +248,13 @@ class TestPersonaAPI:
         return TestClient(app)
 
     def test_list_personas_empty(self, client):
-        resp = client.get("/agent/personas")
+        resp = client.get("/api/agent/personas")
         assert resp.status_code == 200
         assert resp.json() == []
 
     def _create_persona(self, client) -> str:
         """Helper: create a persona and return its ID."""
-        resp = client.post("/agent/personas", json={
+        resp = client.post("/api/agent/personas", json={
             "name": "Energetic Host",
             "agent_type": "host",
             "personality_traits": ["enthusiastic", "warm"],
@@ -272,43 +272,43 @@ class TestPersonaAPI:
         assert pid is not None
 
     def test_create_persona_validates_required(self, client):
-        resp = client.post("/agent/personas", json={})
+        resp = client.post("/api/agent/personas", json={})
         assert resp.status_code == 422
 
     def test_get_persona(self, client):
         pid = self._create_persona(client)
-        resp = client.get(f"/agent/personas/{pid}")
+        resp = client.get(f"/api/agent/personas/{pid}")
         assert resp.status_code == 200
         assert resp.json()["id"] == pid
 
     def test_get_nonexistent_persona(self, client):
-        resp = client.get("/agent/personas/nonexistent")
+        resp = client.get("/api/agent/personas/nonexistent")
         assert resp.status_code == 404
 
     def test_update_persona(self, client):
         pid = self._create_persona(client)
-        resp = client.put(f"/agent/personas/{pid}", json={"name": "Updated Host"})
+        resp = client.put(f"/api/agent/personas/{pid}", json={"name": "Updated Host"})
         assert resp.status_code == 200
         assert resp.json()["name"] == "Updated Host"
 
     def test_update_nonexistent(self, client):
-        resp = client.put("/agent/personas/nope", json={"name": "X"})
+        resp = client.put("/api/agent/personas/nope", json={"name": "X"})
         assert resp.status_code == 404
 
     def test_delete_persona(self, client):
         pid = self._create_persona(client)
-        resp = client.delete(f"/agent/personas/{pid}")
+        resp = client.delete(f"/api/agent/personas/{pid}")
         assert resp.status_code == 200
-        resp = client.get(f"/agent/personas/{pid}")
+        resp = client.get(f"/api/agent/personas/{pid}")
         assert resp.status_code == 404
 
     def test_delete_nonexistent(self, client):
-        resp = client.delete("/agent/personas/nope")
+        resp = client.delete("/api/agent/personas/nope")
         assert resp.status_code == 404
 
     def test_assign_host_persona(self, client):
         pid = self._create_persona(client)
-        resp = client.post(f"/agent/host/persona/{pid}")
+        resp = client.post(f"/api/agent/host/persona/{pid}")
         assert resp.status_code == 200
         data = resp.json()
         assert data["assigned"] is True
@@ -317,42 +317,42 @@ class TestPersonaAPI:
 
     def test_assign_cohost_persona(self, client):
         pid = self._create_persona(client)
-        resp = client.post(f"/agent/cohost/persona/{pid}")
+        resp = client.post(f"/api/agent/cohost/persona/{pid}")
         assert resp.status_code == 200
         assert resp.json()["assigned"] is True
 
     def test_assign_nonexistent_persona(self, client):
-        resp = client.post("/agent/host/persona/bogus")
+        resp = client.post("/api/agent/host/persona/bogus")
         assert resp.status_code == 404
 
     def test_remove_host_persona(self, client):
         pid = self._create_persona(client)
-        client.post(f"/agent/host/persona/{pid}")
-        resp = client.delete("/agent/host/persona")
+        client.post(f"/api/agent/host/persona/{pid}")
+        resp = client.delete("/api/agent/host/persona")
         assert resp.status_code == 200
         assert resp.json()["removed"] is True
 
     def test_remove_cohost_persona(self, client):
         pid = self._create_persona(client)
-        client.post(f"/agent/cohost/persona/{pid}")
-        resp = client.delete("/agent/cohost/persona")
+        client.post(f"/api/agent/cohost/persona/{pid}")
+        resp = client.delete("/api/agent/cohost/persona")
         assert resp.status_code == 200
 
     def test_delete_rejects_if_assigned_to_host(self, client):
         pid = self._create_persona(client)
-        client.post(f"/agent/host/persona/{pid}")
-        resp = client.delete(f"/agent/personas/{pid}")
+        client.post(f"/api/agent/host/persona/{pid}")
+        resp = client.delete(f"/api/agent/personas/{pid}")
         assert resp.status_code == 409  # Conflict — persona in use
 
     def test_delete_rejects_if_assigned_to_cohost(self, client):
         pid = self._create_persona(client)
-        client.post(f"/agent/cohost/persona/{pid}")
-        resp = client.delete(f"/agent/personas/{pid}")
+        client.post(f"/api/agent/cohost/persona/{pid}")
+        resp = client.delete(f"/api/agent/personas/{pid}")
         assert resp.status_code == 409
 
     def test_persona_affects_dialogue_through_api(self, client):
         # Create persona
-        pid = client.post("/agent/personas", json={
+        pid = client.post("/api/agent/personas", json={
             "name": "Excited Host", "agent_type": "host",
             "personality_traits": ["excited"], "catchphrases": ["Wow!"],
             "voice_style": "energetic", "default_emotion": "excited",
@@ -360,15 +360,15 @@ class TestPersonaAPI:
         }).json()["id"]
 
         # Assign to host
-        client.post(f"/agent/host/persona/{pid}")
+        client.post(f"/api/agent/host/persona/{pid}")
 
         # Create episode + segment + generate dialogue
-        ep = client.post("/agent/episode", json={"title": "Morning Show"}).json()
-        client.post(f"/agent/episode/{ep['id']}/segment",
+        ep = client.post("/api/agent/episode", json={"title": "Morning Show"}).json()
+        client.post(f"/api/agent/episode/{ep['id']}/segment",
                     json={"id": "intro", "type": "intro", "title": "Welcome!"})
-        client.post(f"/agent/episode/{ep['id']}/load")
-        client.post("/agent/director/next")
-        resp = client.post("/agent/director/generate")
+        client.post(f"/api/agent/episode/{ep['id']}/load")
+        client.post("/api/agent/director/next")
+        resp = client.post("/api/agent/director/generate")
         data = resp.json()
         # Host dialogue should have emotion set
         assert data["host"]["lines"][0]["emotion"] is not None

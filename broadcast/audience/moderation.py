@@ -35,9 +35,10 @@ def _is_emoji(char: str) -> bool:
     cp = ord(char)
     return (
         0x1F300 <= cp <= 0x1F9FF or  # Misc symbols, emoticons, supplemental
-        0x2600 <= cp <= 0x27BF or     # Misc symbols
-        0xFE00 <= cp <= 0xFE0F or     # Variation selectors
-        0x200D == cp                  # Zero-width joiner
+        0x1FA00 <= cp <= 0x1FAFF or  # Chess symbols + symbols/pictographs extended-A
+        0x2600 <= cp <= 0x27BF or    # Misc symbols
+        0xFE00 <= cp <= 0xFE0F or    # Variation selectors
+        0x200D == cp                 # Zero-width joiner
     )
 
 
@@ -95,7 +96,7 @@ class ModerationEngine:
 
         # 2. Per-user rate limit
         user_id = message.user.id
-        now = message.timestamp
+        now = time()
         timestamps = self._user_timestamps.setdefault(user_id, [])
         # Remove timestamps outside the window
         timestamps[:] = [t for t in timestamps if now - t < RATE_LIMIT_WINDOW]

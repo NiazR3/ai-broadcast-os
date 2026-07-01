@@ -548,51 +548,51 @@ class TestAudienceAPI:
     """Test audience API endpoints via FastAPI TestClient."""
 
     def test_list_chat_empty(self, client):
-        resp = client.get("/audience/chat", headers={"X-API-Key": "test-key"})
+        resp = client.get("/api/audience/chat", headers={"X-API-Key": "test-key"})
         assert resp.status_code == 200
         assert resp.json() == []
 
     def test_inject_chat(self, client):
-        resp = client.post("/audience/chat", json={"text": "Hello!"}, headers={"X-API-Key": "test-key"})
+        resp = client.post("/api/audience/chat", json={"text": "Hello!"}, headers={"X-API-Key": "test-key"})
         assert resp.status_code == 200
         data = resp.json()
         assert data["text"] == "Hello!"
         assert data["platform"] == "mock"
 
     def test_list_chat_after_injection(self, client):
-        client.post("/audience/chat", json={"text": "Hi"}, headers={"X-API-Key": "test-key"})
-        resp = client.get("/audience/chat", headers={"X-API-Key": "test-key"})
+        client.post("/api/audience/chat", json={"text": "Hi"}, headers={"X-API-Key": "test-key"})
+        resp = client.get("/api/audience/chat", headers={"X-API-Key": "test-key"})
         data = resp.json()
         assert len(data) >= 1
         assert any(m["text"] == "Hi" for m in data)
 
     def test_flag_message(self, client):
-        create = client.post("/audience/chat", json={"text": "Bad word"}, headers={"X-API-Key": "test-key"})
+        create = client.post("/api/audience/chat", json={"text": "Bad word"}, headers={"X-API-Key": "test-key"})
         msg_id = create.json()["id"]
-        resp = client.post(f"/audience/chat/{msg_id}/flag", headers={"X-API-Key": "test-key"})
+        resp = client.post(f"/api/audience/chat/{msg_id}/flag", headers={"X-API-Key": "test-key"})
         assert resp.status_code == 200
         assert resp.json()["flagged"] is True
 
     def test_flag_nonexistent_message(self, client):
-        resp = client.post("/audience/chat/nonexistent/flag", headers={"X-API-Key": "test-key"})
+        resp = client.post("/api/audience/chat/nonexistent/flag", headers={"X-API-Key": "test-key"})
         assert resp.status_code == 404
 
     def test_moderate_message(self, client):
-        create = client.post("/audience/chat", json={"text": "Flag me"}, headers={"X-API-Key": "test-key"})
+        create = client.post("/api/audience/chat", json={"text": "Flag me"}, headers={"X-API-Key": "test-key"})
         msg_id = create.json()["id"]
-        client.post(f"/audience/chat/{msg_id}/flag", headers={"X-API-Key": "test-key"})
-        resp = client.post(f"/audience/chat/{msg_id}/moderate", json={"action": "approve"}, headers={"X-API-Key": "test-key"})
+        client.post(f"/api/audience/chat/{msg_id}/flag", headers={"X-API-Key": "test-key"})
+        resp = client.post(f"/api/audience/chat/{msg_id}/moderate", json={"action": "approve"}, headers={"X-API-Key": "test-key"})
         assert resp.status_code == 200
         assert resp.json()["action"] == "approve"
 
     def test_moderate_invalid_action(self, client):
-        create = client.post("/audience/chat", json={"text": "Hi"}, headers={"X-API-Key": "test-key"})
+        create = client.post("/api/audience/chat", json={"text": "Hi"}, headers={"X-API-Key": "test-key"})
         msg_id = create.json()["id"]
-        resp = client.post(f"/audience/chat/{msg_id}/moderate", json={"action": "invalid"}, headers={"X-API-Key": "test-key"})
+        resp = client.post(f"/api/audience/chat/{msg_id}/moderate", json={"action": "invalid"}, headers={"X-API-Key": "test-key"})
         assert resp.status_code == 422
 
     def test_create_moderation_rule(self, client):
-        resp = client.post("/audience/moderation/rules", json={
+        resp = client.post("/api/audience/moderation/rules", json={
             "pattern": r"(?i)\bbadword\b",
             "action": "flag",
             "reason": "Testing",
@@ -603,24 +603,24 @@ class TestAudienceAPI:
         assert data["enabled"] is True
 
     def test_list_moderation_rules(self, client):
-        resp = client.get("/audience/moderation/rules", headers={"X-API-Key": "test-key"})
+        resp = client.get("/api/audience/moderation/rules", headers={"X-API-Key": "test-key"})
         assert resp.status_code == 200
 
     def test_delete_moderation_rule(self, client):
-        create = client.post("/audience/moderation/rules", json={
+        create = client.post("/api/audience/moderation/rules", json={
             "pattern": r"test", "action": "flag",
         }, headers={"X-API-Key": "test-key"})
         rule_id = create.json()["id"]
-        resp = client.delete(f"/audience/moderation/rules/{rule_id}", headers={"X-API-Key": "test-key"})
+        resp = client.delete(f"/api/audience/moderation/rules/{rule_id}", headers={"X-API-Key": "test-key"})
         assert resp.status_code == 200
         assert resp.json()["deleted"] is True
 
     def test_delete_nonexistent_rule(self, client):
-        resp = client.delete("/audience/moderation/rules/nonexistent", headers={"X-API-Key": "test-key"})
+        resp = client.delete("/api/audience/moderation/rules/nonexistent", headers={"X-API-Key": "test-key"})
         assert resp.status_code == 404
 
     def test_create_poll_api(self, client):
-        resp = client.post("/audience/polls", json={
+        resp = client.post("/api/audience/polls", json={
             "question": "Best color?",
             "options": ["Red", "Blue", "Green"],
             "duration_seconds": 60,
@@ -632,60 +632,62 @@ class TestAudienceAPI:
         assert data["status"] == "active"
 
     def test_vote_poll_api(self, client):
-        poll = client.post("/audience/polls", json={
+        poll = client.post("/api/audience/polls", json={
             "question": "Vote test?", "options": ["A", "B"], "duration_seconds": 60,
         }, headers={"X-API-Key": "test-key"}).json()
-        resp = client.post(f"/audience/polls/{poll['id']}/vote", json={
+        resp = client.post(f"/api/audience/polls/{poll['id']}/vote", json={
             "option_index": 0, "user_id": "voter1",
         }, headers={"X-API-Key": "test-key"})
         assert resp.status_code == 200
         assert resp.json()["option_index"] == 0
 
     def test_vote_duplicate_returns_400(self, client):
-        poll = client.post("/audience/polls", json={
+        poll = client.post("/api/audience/polls", json={
             "question": "Dup test?", "options": ["A", "B"], "duration_seconds": 60,
         }, headers={"X-API-Key": "test-key"}).json()
-        client.post(f"/audience/polls/{poll['id']}/vote", json={
+        client.post(f"/api/audience/polls/{poll['id']}/vote", json={
             "option_index": 0, "user_id": "dup_voter",
         }, headers={"X-API-Key": "test-key"})
-        resp = client.post(f"/audience/polls/{poll['id']}/vote", json={
+        resp = client.post(f"/api/audience/polls/{poll['id']}/vote", json={
             "option_index": 1, "user_id": "dup_voter",
         }, headers={"X-API-Key": "test-key"})
         assert resp.status_code == 400
 
     def test_close_poll_api(self, client):
-        poll = client.post("/audience/polls", json={
+        poll = client.post("/api/audience/polls", json={
             "question": "Close test?", "options": ["A", "B"], "duration_seconds": 60,
         }, headers={"X-API-Key": "test-key"}).json()
-        resp = client.post(f"/audience/polls/{poll['id']}/close", headers={"X-API-Key": "test-key"})
+        resp = client.post(f"/api/audience/polls/{poll['id']}/close", headers={"X-API-Key": "test-key"})
         assert resp.status_code == 200
         assert resp.json()["status"] == "closed"
 
     def test_audience_stats(self, client):
-        resp = client.get("/audience/stats", headers={"X-API-Key": "test-key"})
+        resp = client.get("/api/audience/stats", headers={"X-API-Key": "test-key"})
         assert resp.status_code == 200
         data = resp.json()
         assert "total_messages" in data
         assert "unique_users" in data
 
     def test_simulation_start_stop(self, client):
-        resp = client.post("/audience/simulation/start?rate=1.0", headers={"X-API-Key": "test-key"})
+        resp = client.post("/api/audience/simulation/start?rate=1.0", headers={"X-API-Key": "test-key"})
         assert resp.status_code == 200
         assert resp.json()["running"] is True
-        resp = client.post("/audience/simulation/stop", headers={"X-API-Key": "test-key"})
+        resp = client.post("/api/audience/simulation/stop", headers={"X-API-Key": "test-key"})
         assert resp.status_code == 200
         assert resp.json()["running"] is False
 
-    def test_api_requires_auth(self, client):
-        resp = client.get("/audience/chat")
-        assert resp.status_code == 403  # Forbidden (no API key)
+    def test_api_requires_auth(self, client, monkeypatch):
+        monkeypatch.setenv("BROADCAST_API_KEY", "test-key")
+        resp = client.get("/api/audience/chat")
+        assert resp.status_code == 401  # Unauthorized (no API key)
+
 
     def test_inject_chat_empty_text_fails(self, client):
-        resp = client.post("/audience/chat", json={"text": ""}, headers={"X-API-Key": "test-key"})
+        resp = client.post("/api/audience/chat", json={"text": ""}, headers={"X-API-Key": "test-key"})
         assert resp.status_code == 422
 
     def test_create_poll_no_question_fails(self, client):
-        resp = client.post("/audience/polls", json={
+        resp = client.post("/api/audience/polls", json={
             "options": ["A", "B"],
         }, headers={"X-API-Key": "test-key"})
         assert resp.status_code == 422

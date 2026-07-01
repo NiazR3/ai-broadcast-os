@@ -16,37 +16,37 @@ def test_full_broadcast_lifecycle(mock_popen):
     client = TestClient(app)
 
     # Ensure clean state before starting (a prior test may have left the mux active)
-    client.post("/broadcast/stop")
+    client.post("/api/broadcast/stop")
 
     # 1. Initial state
-    status = client.get("/broadcast/status").json()
+    status = client.get("/api/broadcast/status").json()
     assert status["active"] is False
     assert "twitch" in status["platforms"]
 
     # 2. Update platform keys
-    client.post("/broadcast/platforms", json={
+    client.post("/api/broadcast/platforms", json={
         "twitch": "test_key_twitch",
         "youtube": "test_key_youtube",
         "facebook": "test_key_facebook",
     })
 
     # 3. Verify keys applied
-    platforms = client.get("/broadcast/platforms").json()
+    platforms = client.get("/api/broadcast/platforms").json()
     assert platforms["twitch"]["streaming"] is False
     assert platforms["twitch"]["error"] is None
     assert "test_key_twitch" in platforms["twitch"]["rtmp_url"]
 
     # 4. Start broadcast
-    start_resp = client.post("/broadcast/start").json()
+    start_resp = client.post("/api/broadcast/start").json()
     assert start_resp["active"] is True
 
     # 5. Status shows active
-    status = client.get("/broadcast/status").json()
+    status = client.get("/api/broadcast/status").json()
     assert status["active"] is True
     assert status["uptime_seconds"] >= 0
 
     # 6. Stop broadcast
-    stop_resp = client.post("/broadcast/stop").json()
+    stop_resp = client.post("/api/broadcast/stop").json()
     assert stop_resp["active"] is False
 
     # 7. Health still works
@@ -67,7 +67,7 @@ def test_api_errors_return_problem_json():
     client = TestClient(app)
 
     # Non-existent scene endpoint without OBS
-    answer = client.get("/broadcast/scenes")
+    answer = client.get("/api/broadcast/scenes")
     # Should return 503 since OBS is not connected
     assert answer.status_code in (200, 503)
     if answer.status_code == 503:

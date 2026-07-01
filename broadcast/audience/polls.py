@@ -20,7 +20,14 @@ class PollEngine:
         self._votes: dict[str, dict[str, PollVote]] = {}  # poll_id -> {user_id: vote}
 
     def create_poll(self, question: str, options: list[str], duration_seconds: int = 60) -> Poll:
-        """Create a new poll and activate it immediately."""
+        """Create a new poll and activate it immediately.
+
+        Closes any existing active poll to maintain the invariant
+        that at most one poll is active at a time.
+        """
+        for existing in list(self._polls.values()):
+            if existing.status == PollStatus.ACTIVE:
+                self.close_poll(existing.id)
         poll = Poll.model_construct(
             id=uuid.uuid4().hex[:12],
             question=question,

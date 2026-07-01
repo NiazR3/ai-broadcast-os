@@ -2,10 +2,8 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import threading
-from time import time
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -13,6 +11,7 @@ from pydantic import ValidationError
 
 from broadcast.config import Settings
 from broadcast.events.bus import EventBus
+from broadcast.events.publish import publish_event
 
 from broadcast.agents.dialogue import HostAgent, CoHostAgent
 from broadcast.agents.persona import PersonaProfile, PersonaRepository, VoiceStyle
@@ -66,23 +65,8 @@ def stop_agents() -> None:
 
 
 def _publish_agent_event(event_type: str, **extra) -> None:
-    """Publish an agent event asynchronously.
-
-    Handles both async contexts (running event loop) and sync contexts
-    (e.g. thread pool where no event loop exists).
-    """
-    payload = {
-        "type": event_type,
-        "timestamp": time(),
-        **extra,
-    }
-    try:
-        loop = asyncio.get_running_loop()
-    except RuntimeError:
-        # No running loop — create a temporary one (sync endpoint in thread pool)
-        asyncio.run(_event_bus.publish("broadcast", payload))
-    else:
-        loop.create_task(_event_bus.publish("broadcast", payload))
+    """Publish an agent event via the shared publish_event utility."""
+    publish_event(_event_bus, "broadcast", event_type, **extra)
 
 
 # ── Episode endpoints ──────────────────────────────────────────────
@@ -388,6 +372,64 @@ def reset_show_runner() -> dict:
     """Reset the ShowRunner to idle state."""
     _show_runner.reset()
     return {"state": "idle"}
+
+
+# ── Interactive run control endpoints ──────────────────────────────
+
+
+@router.post("/show-runner/prepare")
+def prepare_run(body: dict) -> dict:
+    """Prepare a produced show for interactive per-segment stepping."""
+    episode_id = body.get("episode_id")
+    result = _show_runner.prepare_run(episode_id)
+    if "error" in result:
+        raise HTTPException(status_code=400, detail=result["error"])
+    return result
+
+
+@router.post("/show-runner/connect-obs")
+async def connect_obs() -> dict:
+    """Connect to OWS for interactive mode (best-effort)."""
+    return await _show_runner.connect_obs()
+
+
+@router.post("/show-runner/next-segment")
+async def next_segment() -> dict:
+    """Advance to the next segment in interactive mode."""
+    result = await _show_runner.next_segment()
+    if "error" in result:
+        raise HTTPException(status_code=400, detail=result["error"])
+    return result
+
+
+@router.post("/show-runner/seek/{segment_id}")
+async def seek_segment(segment_id: str) -> dict:
+    """Jump to a named segment (e.g. 'guest', 'content_2')."""
+    result = await _show_runner.seek_to_segment(segment_id)
+    if "error" in result:
+        raise HTTPException(status_code=404, detail=result["error"])
+    return result
+
+
+@router.post("/show-runner/complete")
+def complete_run() -> dict:
+    """Mark the interactive run as completed."""
+    result = _show_runner.complete_run()
+    if "error" in result:
+        raise HTTPException(status_code=400, detail=result["error"])
+    return result
+
+
+@router.post("/show-runner/abort")
+def abort_run() -> dict:
+    """Abort the interactive run (marked as failed)."""
+    return _show_runner.abort_run()
+
+
+@router.get("/show-runner/run-state")
+def show_runner_run_state() -> dict:
+    """Get the current interactive run state — progress, current segment, etc."""
+    return _show_runner.get_run_state()
 
 
 from pydantic import BaseModel

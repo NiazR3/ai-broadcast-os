@@ -1,4 +1,4 @@
-export const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:8100";
+export const API_BASE = import.meta.env.VITE_API_BASE || "/api";
 
 export interface PlatformStatus {
   streaming: boolean;
@@ -230,6 +230,16 @@ export async function assignCoHostPersona(personaId: string): Promise<void> {
 export async function removeCoHostPersona(): Promise<void> {
   const res = await fetch(`${API_BASE}/agent/cohost/persona`, { method: "DELETE" });
   if (!res.ok) throw new Error("Failed to remove co-host persona");
+}
+
+// Reorder personas by sending the ordered list of IDs
+export async function reorderPersonas(ids: string[]): Promise<void> {
+  const res = await fetch(`${API_BASE}/agent/personas/reorder`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ids }),
+  });
+  if (!res.ok) throw new Error("Failed to reorder personas");
 }
 
 // Duplicate an existing persona
@@ -613,5 +623,196 @@ export async function getLiveMetrics(): Promise<LiveMetrics> {
 export async function getDashboardData(): Promise<DashboardData> {
   const res = await fetch(`${API_BASE}/analytics/dashboard`);
   if (!res.ok) throw new Error(`Failed to get dashboard data: ${res.status}`);
+  return res.json();
+}
+
+// ── Scene Source API types ───────────────────────────────────────────
+export interface SceneSource {
+  id: number;
+  name: string;
+  enabled: boolean;
+  type: string;
+  parent_group?: string;
+}
+
+export interface ToggleResponse {
+  source_id: number;
+  enabled: boolean;
+}
+
+// ── Scene Source API functions ───────────────────────────────────────
+export async function getSceneSources(sceneName: string): Promise<SceneSource[]> {
+  const res = await fetch(`${API_BASE}/broadcast/scenes/${encodeURIComponent(sceneName)}/sources`);
+  if (!res.ok) throw new Error("Failed to fetch scene sources");
+  return res.json();
+}
+
+export async function toggleSource(sceneName: string, sourceId: number): Promise<ToggleResponse> {
+  const res = await fetch(
+    `${API_BASE}/broadcast/scenes/${encodeURIComponent(sceneName)}/sources/${sourceId}/toggle`,
+    { method: "POST" }
+  );
+  if (!res.ok) throw new Error("Failed to toggle source");
+  return res.json();
+}
+
+// ── ShowRunner API types ────────────────────────────────────────────────
+
+export interface ShowProductionResult {
+  episode_id: string;
+  topic: string;
+  category: string;
+  state: string;
+  segments: number;
+  total_duration_seconds: number;
+  personas: { host: string | null; cohost: string | null };
+  research_count: number;
+  poll_id: string | null;
+  assets_created: number;
+  dialogue_generated: number;
+  production_log: string[];
+  production_time_seconds: number;
+}
+
+export interface ShowSegmentResult {
+  segment_id: string;
+  segment_type: string;
+  segment_title: string;
+  scene: string;
+  duration_seconds: number;
+  order: number;
+  host_dialogue: DialogueLine[];
+  cohost_dialogue: DialogueLine[];
+  scene_switched?: boolean;
+}
+
+export interface ShowRunResult {
+  episode_id: string;
+  state: string;
+  total_segments: number;
+  segment_results: ShowSegmentResult[];
+  run_log: string[];
+}
+
+export interface ShowStatus {
+  state: string;
+  error: string | null;
+  episode: EpisodeScript | null;
+  assets: string[];
+  research_results: string[];
+  poll_id: string | null;
+  dialogue_segments: string[];
+  personas: { host: string | null; cohost: string | null };
+}
+
+export interface RunState {
+  state: string;
+  error: string | null;
+  current_segment: Segment | null;
+  current_segment_index: number;
+  has_more: boolean;
+  segments_played: number;
+  total_segments: number;
+  run_log: string[];
+}
+
+export interface PrepareRunResult {
+  state: string;
+  episode_id: string;
+  total_segments: number;
+  current_segment_index: number;
+  has_more: boolean;
+}
+
+export interface NextSegmentResult {
+  segment: ShowSegmentResult;
+  segment_index: number;
+  has_more: boolean;
+  progress: string;
+  scene_switched: boolean;
+}
+
+export interface ObsConnectionResult {
+  obs_connected: boolean;
+  scenes: string[];
+}
+
+// ── ShowRunner API functions ────────────────────────────────────────────
+
+export async function produceShow(topic: string, category = "general"): Promise<ShowProductionResult> {
+  const res = await fetch(`${API_BASE}/agent/show-runner/produce`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ topic, category }),
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function runShow(episodeId?: string): Promise<ShowRunResult> {
+  const res = await fetch(`${API_BASE}/agent/show-runner/run`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ episode_id: episodeId }),
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function getShowStatus(): Promise<ShowStatus> {
+  const res = await fetch(`${API_BASE}/agent/show-runner/status`);
+  if (!res.ok) throw new Error("Failed to fetch show status");
+  return res.json();
+}
+
+export async function resetShowRunner(): Promise<{ state: string }> {
+  const res = await fetch(`${API_BASE}/agent/show-runner/reset`, { method: "POST" });
+  if (!res.ok) throw new Error("Failed to reset show runner");
+  return res.json();
+}
+
+export async function prepareRun(episodeId?: string): Promise<PrepareRunResult> {
+  const res = await fetch(`${API_BASE}/agent/show-runner/prepare`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ episode_id: episodeId }),
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function connectObs(): Promise<ObsConnectionResult> {
+  const res = await fetch(`${API_BASE}/agent/show-runner/connect-obs`, { method: "POST" });
+  if (!res.ok) throw new Error("Failed to connect OBS");
+  return res.json();
+}
+
+export async function nextSegment(): Promise<NextSegmentResult> {
+  const res = await fetch(`${API_BASE}/agent/show-runner/next-segment`, { method: "POST" });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function seekSegment(segmentId: string): Promise<NextSegmentResult> {
+  const res = await fetch(`${API_BASE}/agent/show-runner/seek/${encodeURIComponent(segmentId)}`, { method: "POST" });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function completeRun(): Promise<ShowRunResult> {
+  const res = await fetch(`${API_BASE}/agent/show-runner/complete`, { method: "POST" });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function abortRun(): Promise<ShowRunResult> {
+  const res = await fetch(`${API_BASE}/agent/show-runner/abort`, { method: "POST" });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function getRunState(): Promise<RunState> {
+  const res = await fetch(`${API_BASE}/agent/show-runner/run-state`);
+  if (!res.ok) throw new Error("Failed to fetch run state");
   return res.json();
 }

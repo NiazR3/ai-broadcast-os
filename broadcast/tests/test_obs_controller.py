@@ -106,7 +106,7 @@ async def test_set_source_visibility():
         controller._connected = True
         result = await controller.set_source_visibility("Webcam", True)
         assert result is True
-        mock_instance.call.assert_called_once()
+        assert mock_instance.call.call_count == 3
 
 
 def test_disconnect_when_not_connected():

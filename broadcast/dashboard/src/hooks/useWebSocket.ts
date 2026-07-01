@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { BroadcastEvent } from "../lib/api";
 
-const WS_BASE = import.meta.env.VITE_WS_BASE || "ws://localhost:8100";
+const WS_BASE = import.meta.env.VITE_WS_BASE ?? "";
 const RECONNECT_DELAY = 3000;
 
 interface UseWebSocketReturn {

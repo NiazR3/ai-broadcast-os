@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import random
+import random  # nosec - mock chat simulation only, not security-critical
 from abc import ABC, abstractmethod
 from time import time
 from typing import AsyncIterator, Optional
@@ -146,8 +146,8 @@ class MockChatBridge(ChatBridge):
         try:
             while self._running:
                 self._message_counter += 1
-                persona = random.choice(MOCK_VIEWER_PERSONAS)
-                text = random.choice(persona["messages"])
+                persona = random.choice(MOCK_VIEWER_PERSONAS)  # nosec - mock simulation only
+                text = random.choice(persona["messages"])  # nosec - mock simulation only
                 msg = ChatMessage(
                     id=f"mock_{self._message_counter}_{int(time() * 1000)}",
                     platform=ChatPlatform.MOCK,

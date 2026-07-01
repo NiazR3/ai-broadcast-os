@@ -4,6 +4,8 @@ This middleware sets:
 
 - ``X-Content-Type-Options: nosniff`` -- prevents MIME-type sniffing.
 - ``X-Frame-Options: DENY`` -- prevents clickjacking by disallowing framing.
+- ``Permissions-Policy`` -- disables all unused browser APIs (geolocation,
+  camera, microphone, accelerometer, etc.) to reduce the attack surface.
 - ``Content-Security-Policy`` -- restricts resource loading to same-origin,
   permits WebSocket connections to the broadcast port, and allows inline
   styles (for frontend tooling).
@@ -24,6 +26,14 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     ) -> Response:
         response = await call_next(request)
         response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["Permissions-Policy"] = (
+            "geolocation=(), camera=(), microphone=(), accelerometer=(), "
+            "autoplay=(), clipboard-read=(), clipboard-write=(), display-capture=(), "
+            "encrypted-media=(), fullscreen=(), gamepad=(), gyroscope=(), "
+            "magnetometer=(), midi=(), payment=(), picture-in-picture=(), "
+            "publickey-credentials-get=(), screen-wake-lock=(), sync-xhr=(), "
+            "usb=(), web-share=(), xr-spatial-tracking=()"
+        )
         response.headers["X-Frame-Options"] = "DENY"
         response.headers["Content-Security-Policy"] = (
             "default-src 'self'; "

@@ -6,7 +6,7 @@ def test_full_persona_workflow():
     client = TestClient(app)
 
     # 1. Create persona
-    resp = client.post("/agent/personas", json={
+    resp = client.post("/api/agent/personas", json={
         "name": "Energetic Host",
         "agent_type": "host",
         "personality_traits": ["enthusiastic", "warm"],
@@ -21,7 +21,7 @@ def test_full_persona_workflow():
     assert pid is not None
 
     # 2. Assign to host
-    resp = client.post(f"/agent/host/persona/{pid}")
+    resp = client.post(f"/api/agent/host/persona/{pid}")
     assert resp.status_code == 200
     data = resp.json()
     assert data["assigned"] is True
@@ -29,12 +29,12 @@ def test_full_persona_workflow():
     assert data["agent"] == "host"
 
     # 3. Create episode + segment + generate dialogue
-    ep = client.post("/agent/episode", json={"title": "Morning Show"}).json()
-    client.post(f"/agent/episode/{ep['id']}/segment",
+    ep = client.post("/api/agent/episode", json={"title": "Morning Show"}).json()
+    client.post(f"/api/agent/episode/{ep['id']}/segment",
                 json={"id": "intro", "type": "intro", "title": "Welcome!"})
-    client.post(f"/agent/episode/{ep['id']}/load")
-    client.post("/agent/director/next")
-    resp = client.post("/agent/director/generate")
+    client.post(f"/api/agent/episode/{ep['id']}/load")
+    client.post("/api/agent/director/next")
+    resp = client.post("/api/agent/director/generate")
     assert resp.status_code == 200
     data = resp.json()
     # Host dialogue should have emotion set
@@ -42,14 +42,14 @@ def test_full_persona_workflow():
     assert data["host"]["lines"][0]["emotion"] in ["excited", "curious"]
 
     # 4. Unassign persona from host
-    resp = client.delete("/agent/host/persona")
+    resp = client.delete("/api/agent/host/persona")
     assert resp.status_code == 200
     assert resp.json()["removed"] is True
 
     # 5. Delete persona and verify cleanup
-    resp = client.delete(f"/agent/personas/{pid}")
+    resp = client.delete(f"/api/agent/personas/{pid}")
     assert resp.status_code == 200
-    resp = client.get(f"/agent/personas/{pid}")
+    resp = client.get(f"/api/agent/personas/{pid}")
     assert resp.status_code == 404
 
 if __name__ == "__main__":

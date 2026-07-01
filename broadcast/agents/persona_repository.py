@@ -4,8 +4,10 @@ from __future__ import annotations
 import json
 import os
 import sqlite3
-import uuid
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
+
+if TYPE_CHECKING:
+    from .persona import PersonaProfile
 
 
 class PersonaRepository:
@@ -18,7 +20,7 @@ class PersonaRepository:
     def __init__(self, db_path: Optional[str] = None) -> None:
         self._db_path = db_path
         self._conn: Optional[sqlite3.Connection] = None
-        self._personas: dict[str, object] = {}  # In-memory fallback
+        self._personas: dict[str, PersonaProfile] = {}  # In-memory fallback
 
         if db_path is not None:
             self._connect()
@@ -31,7 +33,7 @@ class PersonaRepository:
         if db_dir and not os.path.exists(db_dir):
             os.makedirs(db_dir, exist_ok=True)
 
-        self._conn = sqlite3.connect(self._db_path)
+        self._conn = sqlite3.connect(self._db_path, check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
         # Enable foreign key support and WAL mode for better concurrency
         self._conn.execute("PRAGMA foreign_keys=ON")
@@ -39,7 +41,8 @@ class PersonaRepository:
 
     def _init_db(self) -> None:
         """Create the personas table if it doesn't exist."""
-        assert self._conn is not None
+        if self._conn is None:
+            raise RuntimeError("Database connection not initialized")
         self._conn.execute(
             """
             CREATE TABLE IF NOT EXISTS personas (
@@ -51,7 +54,8 @@ class PersonaRepository:
                 voice_style TEXT NOT NULL,
                 default_emotion TEXT NOT NULL,
                 emotional_range TEXT NOT NULL,
-                background_story TEXT NOT NULL
+                background_story TEXT NOT NULL,
+                sort_order INTEGER NOT NULL DEFAULT 0
             )
             """
         )
@@ -63,7 +67,7 @@ class PersonaRepository:
 
         return PersonaProfile, AgentType, VoiceStyle
 
-    def _row_to_persona(self, row: sqlite3.Row) -> object:
+    def _row_to_persona(self, row: sqlite3.Row) -> PersonaProfile:
         """Convert a database row to a PersonaProfile instance."""
         PersonaProfile, AgentType, VoiceStyle = self._get_persona_class()
         return PersonaProfile(
@@ -76,9 +80,10 @@ class PersonaRepository:
             default_emotion=row["default_emotion"],
             emotional_range=json.loads(row["emotional_range"]),
             background_story=row["background_story"],
+            sort_order=row["sort_order"],
         )
 
-    def _persona_to_tuple(self, persona: object) -> tuple:
+    def _persona_to_tuple(self, persona: PersonaProfile) -> tuple:
         """Convert a PersonaProfile instance to a tuple for SQL insertion."""
         return (
             persona.id,
@@ -90,6 +95,7 @@ class PersonaRepository:
             persona.default_emotion,
             json.dumps(persona.emotional_range),
             persona.background_story,
+            persona.sort_order,
         )
 
     # CRUD operations -----------------------------------------------------
@@ -97,15 +103,15 @@ class PersonaRepository:
     def create(
         self,
         name: str,
-        agent_type: object,
+        agent_type: AgentType,
         personality_traits: Optional[list[str]] = None,
         catchphrases: Optional[list[str]] = None,
-        voice_style: object = None,
+        voice_style: VoiceStyle = None,
         default_emotion: str = "neutral",
         emotional_range: Optional[list[str]] = None,
         background_story: str = "",
         id: Optional[str] = None,
-    ) -> object:
+    ) -> PersonaProfile:
         """Create a new persona.
 
         If id is provided, use it (must be unique). Otherwise, generate an ID.
@@ -117,6 +123,7 @@ class PersonaRepository:
             voice_style = VoiceStyle.CASUAL
 
         if id is None:
+            import uuid
             persona_id = uuid.uuid4().hex[:12]
         else:
             persona_id = id
@@ -135,14 +142,13 @@ class PersonaRepository:
 
         if self._conn is not None:
             # Persist to SQLite
-            assert self._conn is not None
             # Use INSERT OR REPLACE to handle duplicates (mirrors from_model behavior)
             self._conn.execute(
                 """
                 INSERT OR REPLACE INTO personas (
                     id, name, agent_type, personality_traits, catchphrases,
-                    voice_style, default_emotion, emotional_range, background_story
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    voice_style, default_emotion, emotional_range, background_story, sort_order
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 self._persona_to_tuple(persona),
             )
@@ -153,11 +159,10 @@ class PersonaRepository:
 
         return persona
 
-    def get(self, persona_id: str) -> Optional[object]:
+    def get(self, persona_id: str) -> Optional[PersonaProfile]:
         """Retrieve a persona by ID, or None if not found."""
         if self._conn is not None:
             # SQLite lookup
-            assert self._conn is not None
             cursor = self._conn.execute(
                 "SELECT * FROM personas WHERE id = ?", (persona_id,)
             )
@@ -169,38 +174,50 @@ class PersonaRepository:
             # In-memory lookup
             return self._personas.get(persona_id)
 
-    def list(self) -> list[object]:
+    def list(self) -> list[PersonaProfile]:
         """Return all personas."""
         if self._conn is not None:
             # SQLite query
-            assert self._conn is not None
-            cursor = self._conn.execute("SELECT * FROM personas ORDER BY id")
+            cursor = self._conn.execute("SELECT * FROM personas ORDER BY sort_order, id")
             rows = cursor.fetchall()
             return [self._row_to_persona(row) for row in rows]
         else:
             # In-memory list
             return list(self._personas.values())
 
-    def update(self, persona_id: str, **kwargs) -> object:
+    def update(self, persona_id: str, **kwargs) -> PersonaProfile:
         """Update fields of an existing persona."""
         PersonaProfile, AgentType, VoiceStyle = self._get_persona_class()
         persona = self.get(persona_id)
         if persona is None:
             raise ValueError(f"Persona '{persona_id}' not found")
 
-        # Update the persona instance in memory
         for key, value in kwargs.items():
-            if hasattr(persona, key) and value is not None:
-                setattr(persona, key, value)
+            if hasattr(persona, key):
+                if value is None:
+                    # Reset to Pydantic field default (empty list, empty string, etc.)
+                    # instead of silently skipping
+                    try:
+                        field_info = persona.model_fields[key]
+                    except (AttributeError, KeyError):
+                        continue
+                    if field_info.default_factory is not None:
+                        setattr(persona, key, field_info.default_factory())
+                    elif field_info.default is not None:
+                        import pydantic
+                        if field_info.default is not pydantic.Undefined:
+                            setattr(persona, key, field_info.default)
+                else:
+                    setattr(persona, key, value)
 
         if self._conn is not None:
             # Persist update to SQLite
-            assert self._conn is not None
             self._conn.execute(
                 """
                 UPDATE personas SET
                     name = ?, agent_type = ?, personality_traits = ?, catchphrases = ?,
-                    voice_style = ?, default_emotion = ?, emotional_range = ?, background_story = ?
+                    voice_style = ?, default_emotion = ?, emotional_range = ?,
+                    background_story = ?, sort_order = ?
                 WHERE id = ?
                 """,
                 (
@@ -212,6 +229,7 @@ class PersonaRepository:
                     persona.default_emotion,
                     json.dumps(persona.emotional_range),
                     persona.background_story,
+                    persona.sort_order,
                     persona.id,
                 ),
             )
@@ -226,7 +244,6 @@ class PersonaRepository:
         """Delete a persona by ID. Returns True if deleted, False if not found."""
         if self._conn is not None:
             # SQLite delete
-            assert self._conn is not None
             cursor = self._conn.execute("DELETE FROM personas WHERE id = ?", (persona_id,))
             self._conn.commit()
             return cursor.rowcount > 0
@@ -237,7 +254,7 @@ class PersonaRepository:
                 return True
             return False
 
-    def duplicate_persona(self, persona_id: str) -> object:
+    def duplicate_persona(self, persona_id: str) -> PersonaProfile:
         """Duplicate an existing persona with a new ID and '(Copy)' suffix in name.
 
         Args:
@@ -283,12 +300,32 @@ class PersonaRepository:
             id=duplicate.id,
         )
 
+    def reorder(self, persona_ids: list[str]) -> None:
+        """Update sort_order for personas based on their position in the given list.
+
+        Args:
+            persona_ids: Ordered list of persona IDs (index in list = new sort_order)
+        """
+        if self._conn is not None:
+            for idx, pid in enumerate(persona_ids):
+                self._conn.execute(
+                    "UPDATE personas SET sort_order = ? WHERE id = ?",
+                    (idx, pid),
+                )
+            self._conn.commit()
+        else:
+            # In-memory: update sort_order on each persona object
+            for idx, pid in enumerate(persona_ids):
+                if pid in self._personas:
+                    persona = self._personas[pid]
+                    persona.sort_order = idx
+
     def _generate_id(self) -> str:
         """Generate a unique ID for a persona."""
         import uuid
         return uuid.uuid4().hex[:12]
 
-    def from_model(self, persona: object) -> object:
+    def from_model(self, persona: PersonaProfile) -> PersonaProfile:
         """Store a pre-built PersonaProfile (used for seeding defaults).
 
         This method inserts the given persona, using its existing ID.
@@ -311,3 +348,20 @@ class PersonaRepository:
         if self._conn is not None:
             self._conn.close()
             self._conn = None
+
+    def __del__(self) -> None:
+        """Ensure the database connection is closed on garbage collection."""
+        if self._conn is not None:
+            try:
+                self._conn.close()
+            except Exception:  # nosec - swallow during interpreter shutdown
+                pass
+            self._conn = None
+
+    def __enter__(self) -> PersonaRepository:
+        """Context manager entry."""
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+        """Context manager exit — ensures the connection is closed."""
+        self.close()

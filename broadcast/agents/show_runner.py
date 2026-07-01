@@ -2,11 +2,11 @@
 
 Coordinates Producer, Director, Host, CoHost, Research, Media, Poll,
 and OBS modules into a single automated show production workflow.
+Supports both one-shot run_show() and interactive per-segment stepping.
 """
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from enum import Enum
 from time import time
@@ -27,6 +27,7 @@ from broadcast.agents.producer import ProducerAgent
 from broadcast.audience.polls import PollEngine
 from broadcast.config import Settings
 from broadcast.events.bus import EventBus
+from broadcast.events.publish import publish_event
 from broadcast.media.engine import MediaAgent
 from broadcast.media.models import ChartConfig, ChartType, TextOverlayConfig
 from broadcast.obs.controller import ObsController
@@ -48,42 +49,12 @@ class ShowState(str, Enum):
 # ── Segment templates (6-segment show structure) ────────────────────────
 
 SEGMENT_TEMPLATES: list[dict] = [
-    {
-        "id": "intro",
-        "type": SegmentType.INTRO,
-        "duration_seconds": 30,
-        "scene_name": "Intro",
-    },
-    {
-        "id": "content_1",
-        "type": SegmentType.CONTENT,
-        "duration_seconds": 180,
-        "scene_name": "Content",
-    },
-    {
-        "id": "guest",
-        "type": SegmentType.GUEST,
-        "duration_seconds": 120,
-        "scene_name": "Guest",
-    },
-    {
-        "id": "ad",
-        "type": SegmentType.AD,
-        "duration_seconds": 30,
-        "scene_name": "Ad",
-    },
-    {
-        "id": "content_2",
-        "type": SegmentType.CONTENT,
-        "duration_seconds": 120,
-        "scene_name": "Content",
-    },
-    {
-        "id": "outro",
-        "type": SegmentType.OUTRO,
-        "duration_seconds": 30,
-        "scene_name": "Outro",
-    },
+    {"id": "intro",      "type": SegmentType.INTRO,    "duration_seconds": 30,  "scene_name": "Intro"},
+    {"id": "content_1",  "type": SegmentType.CONTENT,  "duration_seconds": 180, "scene_name": "Content"},
+    {"id": "guest",      "type": SegmentType.GUEST,    "duration_seconds": 120, "scene_name": "Guest"},
+    {"id": "ad",         "type": SegmentType.AD,       "duration_seconds": 30,  "scene_name": "Ad"},
+    {"id": "content_2",  "type": SegmentType.CONTENT,  "duration_seconds": 120, "scene_name": "Content"},
+    {"id": "outro",      "type": SegmentType.OUTRO,    "duration_seconds": 30,  "scene_name": "Outro"},
 ]
 
 
@@ -197,6 +168,8 @@ TOPIC_CHART_TEMPLATES: dict[str, dict] = {
     },
 }
 
+VALID_CATEGORIES: set[str] = set(POLL_TEMPLATES) | {"general"}
+
 
 class ShowRunnerAgent(BaseAgent):
     """Orchestrator that automates full episode production.
@@ -204,6 +177,13 @@ class ShowRunnerAgent(BaseAgent):
     Coordinates: episode creation, segment building, persona assignment,
     research, polls, media assets, dialogue generation, OBS scene
     management, and live playback control.
+
+    Two run modes:
+      - **One-shot**: ``run_show()`` advances through all segments and
+        returns the full result.
+      - **Interactive**: ``prepare_run()`` → ``next_segment()`` →
+        ``seek_to_segment()`` → ``complete_run()`` / ``abort_run()``
+        for per-segment frontend control.
     """
 
     def __init__(
@@ -238,9 +218,15 @@ class ShowRunnerAgent(BaseAgent):
         self._current_episode: Optional[EpisodeScript] = None
         self._asset_ids: list[str] = []
         self._research_ids: list[str] = []
+        self._research_context: dict[str, str] = {}  # segment_id → formatted research
         self._poll_id: Optional[str] = None
         self._dialogue: dict[str, dict] = {}
         self._error: Optional[str] = None
+
+        # Interactive run mode state
+        self._run_log: list[str] = []
+        self._segment_results: list[dict] = []
+        self._obs_ready: bool = False
 
     # ── Agent identity ──────────────────────────────────────────────────
 
@@ -260,7 +246,11 @@ class ShowRunnerAgent(BaseAgent):
     def current_episode(self) -> Optional[EpisodeScript]:
         return self._current_episode
 
-    # ── Public API ──────────────────────────────────────────────────────
+    @property
+    def error(self) -> Optional[str]:
+        return self._error
+
+    # ── Public API: Production ──────────────────────────────────────────
 
     def produce_show(self, topic: str, category: str = "general") -> dict:
         """Orchestrate full episode production.
@@ -293,6 +283,7 @@ class ShowRunnerAgent(BaseAgent):
         self._error = None
         self._asset_ids = []
         self._research_ids = []
+        self._research_context = {}
         self._poll_id = None
         self._dialogue = {}
         category = category.lower()
@@ -333,36 +324,54 @@ class ShowRunnerAgent(BaseAgent):
             self._research_ids = self._submit_topic_research(topic, category)
             production_log.append(f"Research: {len(self._research_ids)} submission(s)")
 
-            # 5. Create poll
+            # 5. Build research context map for dialogue injection
+            self._research_context = self._build_research_context()
+
+            # 6. Create poll
             poll = self._create_topic_poll(category)
             if poll:
                 self._poll_id = poll.id
                 production_log.append(f"Poll created: '{poll.question}'")
 
-            # 6. Generate media assets
+            # 7. Generate media assets
             asset_count = self._generate_show_assets(category, topic)
             production_log.append(f"Media assets: {asset_count} created")
 
-            # 7. Generate dialogue for all segments
+            # 8. Generate dialogue for all segments (per-segment error isolation)
+            dialogue_count = 0
             for seg in episode.segments:
-                host_block = self._host.generate_dialogue(seg, repo=self._persona_repo)
-                host_text = host_block.lines[0].text if host_block.lines else ""
-                cohost_block = self._cohost.generate_dialogue(
-                    seg, host_dialogue=host_text, repo=self._persona_repo
-                )
-                self._dialogue[seg.id] = {
-                    "host": host_block.model_dump(),
-                    "cohost": cohost_block.model_dump(),
-                }
-            production_log.append(
-                f"Dialogue generated for {len(episode.segments)} segments"
-            )
+                try:
+                    # Inject research context into dialogue prompt if available
+                    enriched_prompt = seg.dialogue_prompt
+                    research_ctx = self._research_context.get(seg.id)
+                    if research_ctx:
+                        enriched_prompt = f"{seg.dialogue_prompt}\n\nContext: {research_ctx}"
+
+                    seg_with_context = seg.model_copy(update={"dialogue_prompt": enriched_prompt})
+                    host_block = self._host.generate_dialogue(seg_with_context, repo=self._persona_repo)
+                    host_text = host_block.lines[0].text if host_block.lines else ""
+                    cohost_block = self._cohost.generate_dialogue(
+                        seg_with_context, host_dialogue=host_text, repo=self._persona_repo
+                    )
+                    self._dialogue[seg.id] = {
+                        "host": host_block.model_dump(),
+                        "cohost": cohost_block.model_dump(),
+                    }
+                    dialogue_count += 1
+                except Exception:
+                    logger.exception("Dialogue generation failed for segment '%s'", seg.id)
+                    self._dialogue[seg.id] = {
+                        "host": {"segment_id": seg.id, "lines": []},
+                        "cohost": {"segment_id": seg.id, "lines": []},
+                    }
+            production_log.append(f"Dialogue generated for {dialogue_count}/{len(episode.segments)} segments")
 
             # Mark episode ready
             episode.status = ScriptStatus.READY
             self._state = ShowState.READY
 
-            self._publish_event(
+            publish_event(
+                self._event_bus, "broadcast",
                 "show.produced",
                 episode_id=episode.id,
                 topic=topic,
@@ -385,7 +394,7 @@ class ShowRunnerAgent(BaseAgent):
                 "research_count": len(self._research_ids),
                 "poll_id": self._poll_id,
                 "assets_created": len(self._asset_ids),
-                "dialogue_generated": len(self._dialogue),
+                "dialogue_generated": dialogue_count,
                 "production_log": production_log,
                 "production_time_seconds": round(time() - start_time, 2),
             }
@@ -394,24 +403,28 @@ class ShowRunnerAgent(BaseAgent):
             self._state = ShowState.FAILED
             self._error = str(exc)
             logger.exception("Show production failed for topic '%s'", topic)
-            self._publish_event("show.failed", topic=topic, error=str(exc))
+            publish_event(self._event_bus, "broadcast", "show.failed", topic=topic, error=str(exc))
             return {
                 "error": f"Production failed: {exc}",
                 "state": self._state.value,
                 "production_log": production_log,
             }
 
+    # ── Public API: One-shot run ────────────────────────────────────────
+
     async def run_show(self, episode_id: Optional[str] = None) -> dict:
-        """Run a produced show — advance through segments with OBS scene switching.
+        """Run a produced show — advance through all segments with OBS scene switching.
 
         Loads the produced episode into the Director, then steps through
         every segment, returning the full playback plan with dialogue.
         Attempts OBS scene switching per segment if an ObsController was
         configured; OBS connection failures are non-fatal.
 
+        Emits ``show.segment.started`` and ``show.segment.completed``
+        events via the EventBus for frontend real-time updates.
+
         Args:
-            episode_id: Optional episode ID. Uses the current episode if
-                        omitted.
+            episode_id: Optional episode ID. Uses the current episode if omitted.
 
         Returns:
             Dict with segment_results (dialogue per segment) and
@@ -445,6 +458,10 @@ class ShowRunnerAgent(BaseAgent):
 
         # Try OBS connection (non-fatal if unavailable)
         obs_ready = await self._try_obs_connect()
+        if obs_ready:
+            run_log.append("OBS connected")
+
+        publish_event(self._event_bus, "broadcast", "show.started", episode_id=episode.id)
 
         try:
             while self._director.has_more:
@@ -452,7 +469,19 @@ class ShowRunnerAgent(BaseAgent):
                 if segment is None:
                     break
 
-                # Switch OBS scene if connected
+                # Emit pre-segment event
+                publish_event(
+                    self._event_bus, "broadcast",
+                    "show.segment.started",
+                    episode_id=episode.id,
+                    segment_id=segment.id,
+                    segment_type=segment.type.value,
+                    segment_title=segment.title,
+                    order=segment.order,
+                    duration_seconds=segment.duration_seconds,
+                )
+
+                # Switch/verify OBS scene
                 if obs_ready and segment.scene_name:
                     switched = await self._try_obs_scene_switch(segment.scene_name)
                     if switched:
@@ -472,10 +501,19 @@ class ShowRunnerAgent(BaseAgent):
                 segment_results.append(seg_result)
                 run_log.append(f"Segment {segment.order + 1}: '{segment.title}' ({segment.type.value})")
 
+                # Emit post-segment event
+                publish_event(
+                    self._event_bus, "broadcast",
+                    "show.segment.completed",
+                    episode_id=episode.id,
+                    segment_id=segment.id,
+                    order=segment.order,
+                )
+
             episode.status = ScriptStatus.COMPLETED
             self._state = ShowState.COMPLETED
 
-            self._publish_event("show.completed", episode_id=episode.id)
+            publish_event(self._event_bus, "broadcast", "show.completed", episode_id=episode.id)
 
             return {
                 "episode_id": episode.id,
@@ -489,13 +527,287 @@ class ShowRunnerAgent(BaseAgent):
             self._state = ShowState.FAILED
             self._error = str(exc)
             logger.exception("Show run failed for episode '%s'", episode.id)
-            self._publish_event("show.failed", episode_id=episode.id, error=str(exc))
+            publish_event(self._event_bus, "broadcast", "show.failed", episode_id=episode.id, error=str(exc))
             return {
                 "error": f"Show run failed: {exc}",
                 "state": self._state.value,
                 "segment_results": segment_results,
                 "run_log": run_log,
             }
+
+    # ── Public API: Interactive run control ─────────────────────────────
+
+    def prepare_run(self, episode_id: Optional[str] = None) -> dict:
+        """Prepare the producer episode for interactive stepping.
+
+        Loads the produced episode into the Director and connects OBS
+        (best-effort). The frontend can then call ``next_segment()``
+        repeatedly to step through.
+
+        Args:
+            episode_id: Optional episode ID. Uses the current episode if omitted.
+
+        Returns:
+            Dict with state and metadata, or an error dict.
+        """
+        if self._state != ShowState.READY:
+            return {
+                "error": f"Show must be in 'ready' state, currently '{self._state.value}'",
+                "state": self._state.value,
+            }
+
+        episode = self._current_episode
+        if episode is None:
+            return {"error": "No episode loaded", "state": self._state.value}
+
+        if episode_id and episode.id != episode_id:
+            return {
+                "error": f"Episode '{episode_id}' not found",
+                "state": self._state.value,
+            }
+
+        if not episode.segments:
+            return {"error": "Episode has no segments", "state": self._state.value}
+
+        self._state = ShowState.RUNNING
+        episode.status = ScriptStatus.BROADCASTING
+        self._director.load_script(episode)
+        self._run_log = ["Interactive run prepared"]
+        self._segment_results = []
+        self._obs_ready = False
+
+        publish_event(self._event_bus, "broadcast", "show.started",
+                      episode_id=episode.id, mode="interactive")
+
+        return {
+            "state": self._state.value,
+            "episode_id": episode.id,
+            "total_segments": len(episode.segments),
+            "current_segment_index": self._director.current_segment_index,
+            "has_more": self._director.has_more,
+        }
+
+    async def connect_obs(self) -> dict:
+        """Connect to OBS and prepare scene list for interactive mode.
+
+        Returns dict with ``obs_connected`` and ``scenes`` if successful,
+        or ``obs_connected: False``.
+        """
+        obs_ready = await self._try_obs_connect()
+        self._obs_ready = obs_ready
+        scenes = []
+        if obs_ready and self._obs:
+            try:
+                scenes = await self._obs.get_scene_list()
+            except Exception:
+                logger.exception("Failed to list OBS scenes")
+        return {
+            "obs_connected": obs_ready,
+            "scenes": scenes,
+        }
+
+    async def next_segment(self) -> dict:
+        """Advance to the next segment in interactive mode.
+
+        Returns the segment result with dialogue, or an error if no
+        more segments available.
+
+        Emits ``show.segment.started`` / ``show.segment.completed``
+        events for frontend real-time updates.
+        """
+        if self._state != ShowState.RUNNING:
+            return {
+                "error": f"Show must be in 'running' state, currently '{self._state.value}'",
+                "state": self._state.value,
+            }
+
+        if not self._director.has_more:
+            return {"error": "No more segments. Call complete_run() or abort_run().", "has_more": False}
+
+        segment = self._director.next_segment()
+        if segment is None:
+            return {"error": "No more segments.", "has_more": False}
+
+        # Emit pre-segment event
+        publish_event(
+            self._event_bus, "broadcast",
+            "show.segment.started",
+            episode_id=self._current_episode.id if self._current_episode else None,
+            segment_id=segment.id,
+            segment_type=segment.type.value,
+            segment_title=segment.title,
+            order=segment.order,
+            duration_seconds=segment.duration_seconds,
+        )
+
+        # Switch/verify OBS scene
+        scene_switched = False
+        if self._obs_ready and segment.scene_name:
+            scene_switched = await self._try_obs_scene_switch(segment.scene_name)
+            if scene_switched:
+                self._run_log.append(f"Scene switched: '{segment.scene_name}'")
+
+        seg_dialogue = self._dialogue.get(segment.id, {})
+        seg_result = {
+            "segment_id": segment.id,
+            "segment_type": segment.type.value,
+            "segment_title": segment.title,
+            "scene": segment.scene_name,
+            "scene_switched": scene_switched,
+            "duration_seconds": segment.duration_seconds,
+            "order": segment.order,
+            "host_dialogue": seg_dialogue.get("host", {}).get("lines", []),
+            "cohost_dialogue": seg_dialogue.get("cohost", {}).get("lines", []),
+        }
+        self._segment_results.append(seg_result)
+        self._run_log.append(
+            f"Segment {segment.order + 1}: '{segment.title}' ({segment.type.value})"
+        )
+
+        # Emit post-segment event
+        publish_event(
+            self._event_bus, "broadcast",
+            "show.segment.completed",
+            episode_id=self._current_episode.id if self._current_episode else None,
+            segment_id=segment.id,
+            order=segment.order,
+        )
+
+        return {
+            "segment": seg_result,
+            "segment_index": self._director.current_segment_index,
+            "has_more": self._director.has_more,
+            "progress": f"{len(self._segment_results)}/{self._total_segments() or '?'}",
+        }
+
+    async def seek_to_segment(self, segment_id: str) -> dict:
+        """Jump directly to a named segment in interactive mode.
+
+        Args:
+            segment_id: The segment ID to seek to (e.g. "guest", "content_2").
+
+        Returns:
+            The segment result, or an error if the segment is not found.
+        """
+        if self._state != ShowState.RUNNING:
+            return {
+                "error": f"Show must be in 'running' state, currently '{self._state.value}'",
+                "state": self._state.value,
+            }
+
+        segment = self._director.seek_to_segment(segment_id)
+        if segment is None:
+            return {"error": f"Segment '{segment_id}' not found", "has_more": self._director.has_more}
+
+        # Emit seek event
+        publish_event(
+            self._event_bus, "broadcast",
+            "show.segment.started",
+            episode_id=self._current_episode.id if self._current_episode else None,
+            segment_id=segment.id,
+            segment_type=segment.type.value,
+            segment_title=segment.title,
+            order=segment.order,
+            seek=True,
+        )
+
+        # OBS scene switch
+        if self._obs_ready and segment.scene_name:
+            await self._try_obs_scene_switch(segment.scene_name)
+
+        seg_dialogue = self._dialogue.get(segment.id, {})
+        seg_result = {
+            "segment_id": segment.id,
+            "segment_type": segment.type.value,
+            "segment_title": segment.title,
+            "scene": segment.scene_name,
+            "duration_seconds": segment.duration_seconds,
+            "order": segment.order,
+            "host_dialogue": seg_dialogue.get("host", {}).get("lines", []),
+            "cohost_dialogue": seg_dialogue.get("cohost", {}).get("lines", []),
+        }
+
+        return {
+            "segment": seg_result,
+            "segment_index": self._director.current_segment_index,
+            "has_more": self._director.has_more,
+        }
+
+    def complete_run(self) -> dict:
+        """Mark the interactive run as completed.
+
+        Returns the full run summary with all segment results.
+        """
+        if self._state != ShowState.RUNNING:
+            return {
+                "error": f"Show must be in 'running' state, currently '{self._state.value}'",
+                "state": self._state.value,
+            }
+
+        if self._current_episode:
+            self._current_episode.status = ScriptStatus.COMPLETED
+
+        self._state = ShowState.COMPLETED
+        publish_event(
+            self._event_bus, "broadcast", "show.completed",
+            episode_id=self._current_episode.id if self._current_episode else None,
+            total_segments=len(self._segment_results),
+        )
+
+        return {
+            "state": self._state.value,
+            "episode_id": self._current_episode.id if self._current_episode else None,
+            "total_segments": len(self._segment_results),
+            "segment_results": self._segment_results,
+            "run_log": self._run_log,
+        }
+
+    def abort_run(self) -> dict:
+        """Abort the interactive run and mark as failed.
+
+        Returns the partial run summary.
+        """
+        if self._state != ShowState.RUNNING:
+            return {
+                "error": f"Show must be in 'running' state, currently '{self._state.value}'",
+                "state": self._state.value,
+            }
+
+        self._state = ShowState.FAILED
+        self._error = "Run aborted by user"
+        if self._current_episode:
+            self._current_episode.status = ScriptStatus.COMPLETED
+
+        publish_event(
+            self._event_bus, "broadcast", "show.failed",
+            episode_id=self._current_episode.id if self._current_episode else None,
+            error=self._error,
+        )
+
+        return {
+            "state": self._state.value,
+            "error": self._error,
+            "partial_segments": len(self._segment_results),
+            "segment_results": self._segment_results,
+            "run_log": self._run_log,
+        }
+
+    def get_run_state(self) -> dict:
+        """Get the current interactive run state — progress, current segment, etc."""
+        return {
+            "state": self._state.value,
+            "error": self._error,
+            "current_segment": self._director.current_segment.model_dump()
+                if self._director.current_segment and self._state == ShowState.RUNNING
+                else None,
+            "current_segment_index": self._director.current_segment_index,
+            "has_more": self._director.has_more,
+            "segments_played": len(self._segment_results),
+            "total_segments": self._total_segments(),
+            "run_log": self._run_log,
+        }
+
+    # ── Public API: Status & reset ───────────────────────────────────────
 
     def get_show_status(self) -> dict:
         """Return the full status of the current show production."""
@@ -519,11 +831,15 @@ class ShowRunnerAgent(BaseAgent):
         self._current_episode = None
         self._asset_ids = []
         self._research_ids = []
+        self._research_context = {}
         self._poll_id = None
         self._dialogue = {}
         self._error = None
+        self._run_log = []
+        self._segment_results = []
+        self._obs_ready = False
         self._director.reset()
-        self._publish_event("show.reset")
+        publish_event(self._event_bus, "broadcast", "show.reset")
 
     # ── Internal helpers ────────────────────────────────────────────────
 
@@ -540,7 +856,7 @@ class ShowRunnerAgent(BaseAgent):
         return titles.get(seg_id, f"Segment: {topic}")
 
     @staticmethod
-    def _segment_prompt_for(seg_id: str, topic: str, category: str) -> str:  # noqa: ARG004 - category reserved for future use
+    def _segment_prompt_for(seg_id: str, topic: str, category: str) -> str:  # noqa: ARG004
         """Build a dialogue prompt for a segment based on its type and topic."""
         prompts = {
             "intro": (
@@ -567,24 +883,86 @@ class ShowRunnerAgent(BaseAgent):
         }
         return prompts.get(seg_id, f"Discuss {topic}")
 
+    def _total_segments(self) -> int:
+        """Return the total number of segments in the current episode, or 0."""
+        if self._current_episode and self._current_episode.segments:
+            return len(self._current_episode.segments)
+        return 0
+
+    # ── Persona matching (scored) ────────────────────────────────────────
+
     def _find_matching_persona(
         self, agent_type: AgentType, category: str
     ) -> Optional[PersonaProfile]:
-        """Find an existing persona matching agent type and topic category.
+        """Find the best persona for an agent type using multi-dimension scoring.
 
-        Iterates existing personas and returns the first match by
-        agent_type. If no persona exists for the agent type, returns
-        None (the host/co-host agents fall back to default templates).
+        Scores each existing persona of the requested type by:
+        - +3 for category keyword match in ``background_story``
+        - +2 for category keyword match in any ``personality_traits``
+        - +2 if the persona's voice style matches TOPIC_PERSONA_MAP
+        - +1 for category keyword match in the persona's name
+
+        Returns None only if no personas exist for the agent type.
         """
         existing = [
             p for p in self._persona_repo.list() if p.agent_type == agent_type
         ]
-        # Return first matching persona if any exist; preferring one whose
-        # background_story or name hints at the category (fuzzy match).
+        if not existing:
+            return None
+
+        # Determine preferred voice style for this agent type + category
+        preferred_styles = TOPIC_PERSONA_MAP.get(category, (None, None))
+        preferred_voice = preferred_styles[0] if agent_type == AgentType.HOST else preferred_styles[1]
+
+        cat_lower = category.lower()
+        scored: list[tuple[int, PersonaProfile]] = []
+
         for persona in existing:
-            if category.lower() in persona.background_story.lower():
-                return persona
-        return existing[0] if existing else None
+            score = 0
+
+            # Background_story match (+3)
+            if cat_lower in persona.background_story.lower():
+                score += 3
+
+            # Personality traits match (+2 each)
+            for trait in persona.personality_traits:
+                if cat_lower in trait.lower():
+                    score += 2
+
+            # Voice style preference match (+2)
+            if preferred_voice and persona.voice_style == preferred_voice:
+                score += 2
+
+            # Name match (+1)
+            if cat_lower in persona.name.lower():
+                score += 1
+
+            scored.append((score, persona))
+
+        # Return the highest-scoring persona; break ties by sort_order
+        scored.sort(key=lambda s: (-s[0], getattr(s[1], "sort_order", 0)))
+        best = scored[0][1]
+        logger.debug(
+            "Persona match for %s (category=%s): '%s' (score=%d)",
+            agent_type.value, category, best.name, scored[0][0],
+        )
+        return best
+
+    # ── Research helpers ─────────────────────────────────────────────────
+
+    def _build_research_context(self) -> dict[str, str]:
+        """Build a map of segment_id → formatted research context string.
+
+        Uses ``ResearchAgent.get_context_for_segment()`` for each
+        research-backed segment so dialogue generation can inject
+        factual context during ``produce_show``.
+        """
+        context: dict[str, str] = {}
+        for seg_id in ("content_1", "guest", "content_2"):
+            ctx = self._research.get_context_for_segment(seg_id)
+            if ctx:
+                context[seg_id] = ctx
+        return context
 
     def _create_topic_poll(self, category: str) -> Optional[object]:
         """Create a poll matching the topic category, or a default poll."""
@@ -643,6 +1021,8 @@ class ShowRunnerAgent(BaseAgent):
             logger.exception("Research submission failed for content_2")
 
         return ids
+
+    # ── Media asset generation ───────────────────────────────────────────
 
     def _generate_show_assets(self, category: str, topic: str) -> int:
         """Generate media assets (chart, overlays) for the show. Returns count."""
@@ -728,6 +1108,8 @@ class ShowRunnerAgent(BaseAgent):
         )
         return self._media.generate_chart(config)
 
+    # ── OBS helpers ──────────────────────────────────────────────────────
+
     async def _try_obs_connect(self) -> bool:
         """Attempt to connect to OBS. Returns True on success."""
         if not self._obs:
@@ -741,31 +1123,33 @@ class ShowRunnerAgent(BaseAgent):
             return False
 
     async def _try_obs_scene_switch(self, scene_name: str) -> bool:
-        """Attempt to switch to a named OBS scene. Returns True on success."""
+        """Switch to a named OBS scene, auto-creating it if it doesn't exist.
+
+        First calls ``get_scene_list()`` to verify the scene exists.
+        If missing and the ObsController supports it, creates the scene
+        before switching.
+
+        Returns True on successful switch.
+        """
         if not self._obs:
             return False
         try:
+            # Check if scene exists
+            existing_scenes = await self._obs.get_scene_list()
+            if scene_name not in existing_scenes:
+                # Auto-create the scene
+                try:
+                    await self._obs.create_scene(scene_name)
+                    logger.info("Auto-created OBS scene: '%s'", scene_name)
+                except Exception:
+                    logger.warning(
+                        "Could not create OBS scene '%s' — attempting switch anyway",
+                        scene_name,
+                    )
+
             await self._obs.switch_scene(scene_name)
             logger.info("OBS scene switched to '%s'", scene_name)
             return True
         except Exception:
             logger.warning("Failed to switch OBS scene to '%s'", scene_name)
             return False
-
-    def _publish_event(self, event_type: str, **extra) -> None:
-        """Publish a show event to the EventBus.
-
-        Handles both async contexts (running event loop) and sync
-        contexts (e.g. thread pool with no event loop).
-        """
-        payload = {
-            "type": event_type,
-            "timestamp": time(),
-            **extra,
-        }
-        try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError:
-            asyncio.run(self._event_bus.publish("broadcast", payload))
-        else:
-            loop.create_task(self._event_bus.publish("broadcast", payload))

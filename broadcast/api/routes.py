@@ -13,6 +13,8 @@ from broadcast.api.schemas import (
     PlatformConfigResponse,
     PlatformUpdateRequest,
     SceneListResponse,
+    SceneSourceResponse,
+    SourceToggleResponse,
 )
 from broadcast.auth import verify_api_key
 from broadcast.config import Settings
@@ -91,6 +93,7 @@ async def stop_broadcast():
 async def list_scenes():
     """List available OBS scenes."""
     try:
+        await _obs.connect()
         result = await _obs.get_scene_list()
         return SceneListResponse(scenes=result)
     except ObsConnectionError:
@@ -104,6 +107,7 @@ async def list_scenes():
 async def switch_scene(scene_name: str):
     """Switch to a named OBS scene."""
     try:
+        await _obs.connect()
         await _obs.switch_scene(scene_name)
         _publish_event("scene.switched", scene=scene_name)
         return {"scene": scene_name, "status": "switched"}
@@ -111,6 +115,41 @@ async def switch_scene(scene_name: str):
         raise HTTPException(status_code=503, detail="OBS not connected")
     except Exception:
         logger.exception("Failed to switch OBS scene")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@router.get("/scenes/{scene_name}/sources", response_model=list[SceneSourceResponse])
+async def list_scene_sources(scene_name: str):
+    """List all sources in a named OBS scene."""
+    try:
+        await _obs.connect()
+        sources = await _obs.get_scene_sources(scene_name)
+        return [SceneSourceResponse(**s) for s in sources]
+    except ObsConnectionError:
+        raise HTTPException(status_code=503, detail="OBS not connected")
+    except Exception:
+        logger.exception("Failed to list OBS scene sources")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@router.post("/scenes/{scene_name}/sources/{source_id}/toggle", response_model=SourceToggleResponse)
+async def toggle_source_visibility(scene_name: str, source_id: int):
+    """Toggle a source's visibility on/off in a named OBS scene."""
+    try:
+        await _obs.connect()
+        sources = await _obs.get_scene_sources(scene_name)
+        match = next((s for s in sources if s["id"] == source_id), None)
+        if match is None:
+            raise HTTPException(status_code=404, detail="Source not found")
+        new_enabled = not match["enabled"]
+        await _obs.set_source_visibility_in_scene(scene_name, source_id, new_enabled)
+        return SourceToggleResponse(source_id=source_id, enabled=new_enabled)
+    except HTTPException:
+        raise
+    except ObsConnectionError:
+        raise HTTPException(status_code=503, detail="OBS not connected")
+    except Exception:
+        logger.exception("Failed to toggle OBS source visibility")
         raise HTTPException(status_code=500, detail="Internal server error")
 
 

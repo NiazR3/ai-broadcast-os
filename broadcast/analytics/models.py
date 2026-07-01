@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -18,7 +18,7 @@ class BroadcastSession(BaseModel):
     total_chat_messages: int = 0
     unique_chatters: int = 0
     platforms: list[str] = Field(default_factory=list)
-    status: str = "live"  # "live" | "ended"
+    status: Literal["live", "ended"] = "live"
     created_at: float = 0.0
 
 
@@ -47,7 +47,7 @@ class ReportSummary(BaseModel):
     peak_viewers: int = 0
     avg_viewers: float = 0.0
     platforms: list[str] = Field(default_factory=list)
-    status: str = "ended"
+    status: Literal["live", "ended"] = "ended"
 
 
 class EngagementMetrics(BaseModel):

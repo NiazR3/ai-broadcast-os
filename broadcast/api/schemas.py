@@ -42,5 +42,19 @@ class SceneListResponse(BaseModel):
     scenes: list[str]
 
 
-class ErrorResponse(BaseModel):
-    detail: str
+class SceneSourceResponse(BaseModel):
+    """Response model for a single scene source."""
+
+    id: int
+    name: str
+    enabled: bool
+    type: str
+
+
+class SourceToggleResponse(BaseModel):
+    """Response model after toggling source visibility."""
+
+    source_id: int
+    enabled: bool
+
+

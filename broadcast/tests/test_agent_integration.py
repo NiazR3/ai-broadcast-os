@@ -20,7 +20,7 @@ class TestAgentBroadcastLifecycle:
         client = TestClient(app)
 
         # 1. Create episode
-        resp = client.post("/agent/episode", json={"title": "Morning Show"})
+        resp = client.post("/api/agent/episode", json={"title": "Morning Show"})
         assert resp.status_code == 200
         ep = resp.json()
         ep_id = ep["id"]
@@ -33,31 +33,31 @@ class TestAgentBroadcastLifecycle:
             {"id": "outro", "type": "outro", "title": "See You Next Time", "duration_seconds": 15},
         ]
         for seg in segments:
-            resp = client.post(f"/agent/episode/{ep_id}/segment", json=seg)
+            resp = client.post(f"/api/agent/episode/{ep_id}/segment", json=seg)
             assert resp.status_code == 200
 
         # 3. Verify episode has 3 segments
-        resp = client.get(f"/agent/episode/{ep_id}")
+        resp = client.get(f"/api/agent/episode/{ep_id}")
         assert resp.status_code == 200
         assert len(resp.json()["segments"]) == 3
 
         # 4. Load into director
-        resp = client.post(f"/agent/episode/{ep_id}/load")
+        resp = client.post(f"/api/agent/episode/{ep_id}/load")
         assert resp.status_code == 200
         assert resp.json()["loaded"] is True
 
         # 5. Check director status (before first segment)
-        resp = client.get("/agent/director/status")
+        resp = client.get("/api/agent/director/status")
         assert resp.json()["current_segment"] is None
 
         # 6. Advance to intro
-        resp = client.post("/agent/director/next")
+        resp = client.post("/api/agent/director/next")
         assert resp.status_code == 200
         assert resp.json()["segment"]["id"] == "intro"
         assert resp.json()["has_more"] is True
 
         # 7. Generate dialogue for intro
-        resp = client.post("/agent/director/generate")
+        resp = client.post("/api/agent/director/generate")
         assert resp.status_code == 200
         data = resp.json()
         assert data["segment_id"] == "intro"
@@ -66,19 +66,19 @@ class TestAgentBroadcastLifecycle:
         assert len(data["cohost"]["lines"]) >= 1
 
         # 8. Advance through remaining segments
-        client.post("/agent/director/next")  # topic1
-        resp = client.post("/agent/director/next")  # outro
+        client.post("/api/agent/director/next")  # topic1
+        resp = client.post("/api/agent/director/next")  # outro
         assert resp.json()["segment"]["id"] == "outro"
 
         # 9. Try next past end
-        resp = client.post("/agent/director/next")
+        resp = client.post("/api/agent/director/next")
         assert resp.status_code == 400  # No more segments
 
     def test_list_episodes_returns_all(self):
         client = TestClient(app)
-        client.post("/agent/episode", json={"title": "Ep 1"})
-        client.post("/agent/episode", json={"title": "Ep 2"})
-        resp = client.get("/agent/episodes")
+        client.post("/api/agent/episode", json={"title": "Ep 1"})
+        client.post("/api/agent/episode", json={"title": "Ep 2"})
+        resp = client.get("/api/agent/episodes")
         data = resp.json()
         assert len(data) == 2
         titles = [e["title"] for e in data]
@@ -89,7 +89,7 @@ class TestAgentBroadcastLifecycle:
         client = TestClient(app)
 
         # Host dialogue
-        resp = client.post("/agent/host/dialogue", json={
+        resp = client.post("/api/agent/host/dialogue", json={
             "id": "test", "type": "content", "title": "Space Exploration",
         })
         assert resp.status_code == 200
@@ -98,7 +98,7 @@ class TestAgentBroadcastLifecycle:
         assert host["lines"][0]["speaker"] == "Host"
 
         # Co-host dialogue
-        resp = client.post("/agent/cohost/dialogue", json={
+        resp = client.post("/api/agent/cohost/dialogue", json={
             "id": "test", "type": "content", "title": "Space Exploration",
         })
         assert resp.status_code == 200

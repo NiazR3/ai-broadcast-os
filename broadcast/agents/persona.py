@@ -32,6 +32,7 @@ class PersonaProfile(BaseModel):
     default_emotion: str = Field(default="neutral", description="Fallback emotion for dialogue")
     emotional_range: list[str] = Field(default_factory=list, description="Emotions this persona can express")
     background_story: str = Field(default="", description="Short bio / context for LLM prompt building")
+    sort_order: int = Field(default=0, description="Display sort order for drag-to-reorder")
 
 
 # PersonaRepository is imported from persona_repository to provide optional SQLite persistence.
