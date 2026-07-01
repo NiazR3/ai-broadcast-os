@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import threading
 from time import time
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import ValidationError
 
 from broadcast.config import Settings
 from broadcast.events.bus import EventBus
@@ -20,6 +22,7 @@ from broadcast.agents.models import (
     DialogueBlock, DialogueLine,
 )
 from broadcast.agents.producer import ProducerAgent
+from broadcast.agents.show_runner import ShowRunnerAgent
 from broadcast.auth import verify_api_key
 
 logger = logging.getLogger(__name__)
@@ -34,6 +37,32 @@ _cohost = CoHostAgent()
 _persona_repo = PersonaRepository()
 _event_bus = EventBus()
 _settings = Settings()
+_show_runner = ShowRunnerAgent(
+    producer=_producer,
+    director=_director,
+    host=_host,
+    cohost=_cohost,
+    persona_repo=_persona_repo,
+    event_bus=_event_bus,
+    settings=_settings,
+)
+_persona_lock = threading.Lock()
+
+
+def start_agents() -> None:
+    """Start all broadcast agents (call from FastAPI lifespan startup)."""
+    _producer.start()
+    _director.start()
+    _host.start()
+    _cohost.start()
+
+
+def stop_agents() -> None:
+    """Stop all broadcast agents (call from FastAPI lifespan shutdown)."""
+    _producer.stop()
+    _director.stop()
+    _host.stop()
+    _cohost.stop()
 
 
 def _publish_agent_event(event_type: str, **extra) -> None:
@@ -204,9 +233,12 @@ def director_generate() -> dict:
 @router.post("/host/dialogue")
 def host_dialogue(body: dict) -> dict:
     """Generate host dialogue for a given segment description."""
+    seg_type = body.get("type", "content")
+    if seg_type not in (t.value for t in SegmentType):
+        raise HTTPException(status_code=422, detail=f"Invalid segment type: {seg_type}")
     segment = Segment(
         id=body.get("id", "custom"),
-        type=SegmentType(body.get("type", "content")),
+        type=SegmentType(seg_type),
         title=body.get("title", "Untitled"),
         duration_seconds=body.get("duration_seconds", 30),
         scene_name=body.get("scene_name", ""),
@@ -219,9 +251,12 @@ def host_dialogue(body: dict) -> dict:
 @router.post("/cohost/dialogue")
 def cohost_dialogue(body: dict) -> dict:
     """Generate co-host dialogue for a given segment description."""
+    seg_type = body.get("type", "content")
+    if seg_type not in (t.value for t in SegmentType):
+        raise HTTPException(status_code=422, detail=f"Invalid segment type: {seg_type}")
     segment = Segment(
         id=body.get("id", "custom"),
-        type=SegmentType(body.get("type", "content")),
+        type=SegmentType(seg_type),
         title=body.get("title", "Untitled"),
         duration_seconds=body.get("duration_seconds", 30),
         scene_name=body.get("scene_name", ""),
@@ -250,7 +285,7 @@ def create_persona(body: dict) -> dict:
         raise HTTPException(status_code=422, detail=f"Invalid voice_style: {voice_str}")
     try:
         persona = _persona_repo.create(
-            name=body.get("name", "").strip(),
+            name=(body.get("name") or "").strip(),
             agent_type=AgentType(agent_type_str),
             personality_traits=body.get("personality_traits"),
             catchphrases=body.get("catchphrases"),
@@ -278,6 +313,8 @@ def update_persona(persona_id: str, body: dict) -> dict:
     """Update fields on an existing persona."""
     try:
         persona = _persona_repo.update(persona_id, **body)
+    except ValidationError as e:
+        raise HTTPException(status_code=422, detail=str(e))
     except ValueError:
         raise HTTPException(status_code=404, detail="Persona not found")
     return persona.model_dump()
@@ -289,16 +326,17 @@ def delete_persona(persona_id: str) -> dict:
 
     Refuses deletion if the persona is currently assigned to an agent.
     """
-    host_pid = getattr(_host, "_persona_id", None)
-    cohost_pid = getattr(_cohost, "_persona_id", None)
-    if persona_id == host_pid or persona_id == cohost_pid:
-        raise HTTPException(
-            status_code=409,
-            detail="Cannot delete a persona that is currently assigned to an agent",
-        )
-    if not _persona_repo.delete(persona_id):
-        raise HTTPException(status_code=404, detail="Persona not found")
-    return {"deleted": True, "persona_id": persona_id}
+    with _persona_lock:
+        host_pid = getattr(_host, "_persona_id", None)
+        cohost_pid = getattr(_cohost, "_persona_id", None)
+        if persona_id == host_pid or persona_id == cohost_pid:
+            raise HTTPException(
+                status_code=409,
+                detail="Cannot delete a persona that is currently assigned to an agent",
+            )
+        if not _persona_repo.delete(persona_id):
+            raise HTTPException(status_code=404, detail="Persona not found")
+        return {"deleted": True, "persona_id": persona_id}
 
 
 @router.post("/personas/{persona_id}/duplicate", tags=["persona"])
@@ -311,21 +349,77 @@ def duplicate_persona(persona_id: str) -> dict:
         raise HTTPException(status_code=404, detail=str(e))
 
 
+# ── Show Runner endpoints ─────────────────────────────────────────
+
+@router.post("/show-runner/produce")
+def produce_show(body: dict) -> dict:
+    """Produce a full episode from a topic — creates episode, segments,
+    assigns personas, researches, creates a poll, generates media assets,
+    and generates dialogue for all segments."""
+    topic = body.get("topic", "").strip()
+    if not topic:
+        raise HTTPException(status_code=422, detail="Topic is required")
+    category = body.get("category", "general")
+    result = _show_runner.produce_show(topic, category)
+    if "error" in result:
+        raise HTTPException(status_code=400, detail=result["error"])
+    return result
+
+
+@router.post("/show-runner/run")
+async def run_show(body: dict) -> dict:
+    """Run a produced show — advances through segments with OBS scene
+    switching and returns the full playback plan with dialogue."""
+    episode_id = body.get("episode_id")
+    result = await _show_runner.run_show(episode_id)
+    if "error" in result:
+        raise HTTPException(status_code=400, detail=result["error"])
+    return result
+
+
+@router.get("/show-runner/status")
+def show_runner_status() -> dict:
+    """Get the ShowRunner's current status and production details."""
+    return _show_runner.get_show_status()
+
+
+@router.post("/show-runner/reset")
+def reset_show_runner() -> dict:
+    """Reset the ShowRunner to idle state."""
+    _show_runner.reset()
+    return {"state": "idle"}
+
+
+from pydantic import BaseModel
+
+
+class ReorderRequest(BaseModel):
+    ids: list[str]
+
+
+@router.post("/personas/reorder", tags=["persona"])
+def reorder_personas(body: ReorderRequest) -> dict:
+    """Set display order for personas. The index in the list becomes the sort_order."""
+    _persona_repo.reorder(body.ids)
+    return {"reordered": True, "count": len(body.ids)}
+
+
 # ── Persona assignment endpoints ───────────────────────────────────
 
 @router.post("/host/persona/{persona_id}", tags=["persona"])
 def assign_host_persona(persona_id: str) -> dict:
     """Assign a persona profile to the Host agent."""
-    persona = _persona_repo.get(persona_id)
-    if persona is None:
-        raise HTTPException(status_code=404, detail="Persona not found")
-    _host.assign_persona(persona_id, _persona_repo)
-    return {
-        "assigned": True,
-        "persona_id": persona_id,
-        "agent": "host",
-        "persona_name": persona.name,
-    }
+    with _persona_lock:
+        persona = _persona_repo.get(persona_id)
+        if persona is None:
+            raise HTTPException(status_code=404, detail="Persona not found")
+        _host.assign_persona(persona_id, _persona_repo)
+        return {
+            "assigned": True,
+            "persona_id": persona_id,
+            "agent": "host",
+            "persona_name": persona.name,
+        }
 
 
 @router.delete("/host/persona", tags=["persona"])
@@ -338,16 +432,17 @@ def remove_host_persona() -> dict:
 @router.post("/cohost/persona/{persona_id}", tags=["persona"])
 def assign_cohost_persona(persona_id: str) -> dict:
     """Assign a persona profile to the Co-Host agent."""
-    persona = _persona_repo.get(persona_id)
-    if persona is None:
-        raise HTTPException(status_code=404, detail="Persona not found")
-    _cohost.assign_persona(persona_id, _persona_repo)
-    return {
-        "assigned": True,
-        "persona_id": persona_id,
-        "agent": "cohost",
-        "persona_name": persona.name,
-    }
+    with _persona_lock:
+        persona = _persona_repo.get(persona_id)
+        if persona is None:
+            raise HTTPException(status_code=404, detail="Persona not found")
+        _cohost.assign_persona(persona_id, _persona_repo)
+        return {
+            "assigned": True,
+            "persona_id": persona_id,
+            "agent": "cohost",
+            "persona_name": persona.name,
+        }
 
 
 @router.delete("/cohost/persona", tags=["persona"])
