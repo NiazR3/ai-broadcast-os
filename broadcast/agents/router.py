@@ -23,6 +23,7 @@ from broadcast.agents.models import (
 from broadcast.agents.producer import ProducerAgent
 from broadcast.agents.show_runner import ShowRunnerAgent
 from broadcast.auth import verify_api_key
+from broadcast.obs.controller import ObsController
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +37,11 @@ _cohost = CoHostAgent()
 _persona_repo = PersonaRepository()
 _event_bus = EventBus()
 _settings = Settings()
+_obs = ObsController(
+    host=_settings.obs_host,
+    port=_settings.obs_port,
+    password=_settings.obs_password,
+)
 _show_runner = ShowRunnerAgent(
     producer=_producer,
     director=_director,
@@ -44,6 +50,7 @@ _show_runner = ShowRunnerAgent(
     persona_repo=_persona_repo,
     event_bus=_event_bus,
     settings=_settings,
+    obs=_obs,
 )
 _persona_lock = threading.Lock()
 
